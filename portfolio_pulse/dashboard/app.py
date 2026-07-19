@@ -191,19 +191,29 @@ def _status_bar(store) -> None:
                    "in Telegram or `python -m portfolio_pulse.jobs.mcp_sync`.")
 
 
-def _radar_tab(store) -> None:
-    st.subheader("Cross Radar")
-    st.caption("Every tracked stock's 50-DMA vs 200-DMA — sorted so the stocks "
-               "closest to a crossover are on top. Updated at the 18:45 IST scan.")
-    rows = _radar_rows(store)
-    if not rows:
-        st.info("Nothing tracked yet — sync holdings or /add stocks in Telegram.")
-        return
+def _broker_symbols(store) -> dict[str, set[str]]:
+    """{broker: set of symbols held there} from the per-broker records."""
+    import json as _json
+
+    out: dict[str, set[str]] = {}
+    for broker in ("zerodha", "upstox"):
+        raw = store.get_meta(f"holdings:{broker}")
+        if not raw:
+            continue
+        try:
+            out[broker] = {str(r.get("symbol", "")).upper()
+                           for r in _json.loads(raw) if r.get("symbol")}
+        except _json.JSONDecodeError:
+            continue
+    return out
+
+
+def _radar_table(rows: list[dict]) -> None:
     display = []
     for r in rows:
-        badge, blurb, _ = _RELATION.get(r["relation"], _RELATION["unknown"])
+        badge, _, _ = _RELATION.get(r["relation"], _RELATION["unknown"])
         display.append({
-            "Stock": r["symbol"] + ("  👁" if r["kind"] == "watch" else ""),
+            "Stock": r["symbol"],
             "Status": badge,
             "Gap %": round(r["gap_pct"], 2) if r["gap_pct"] is not None else None,
             "≈ Days to cross": round(r["proj"], 1) if r["proj"] else None,
@@ -222,15 +232,56 @@ def _radar_tab(store) -> None:
                      "when the SMAs are converging."),
         },
     )
+
+
+def _radar_tab(store) -> None:
+    st.subheader("Cross Radar — by broker")
+    st.caption("50-DMA vs 200-DMA per stock, closest-to-crossover on top within "
+               "each section. Updated at the 18:45 IST scan.")
+    rows = _radar_rows(store)
+    if not rows:
+        st.info("Nothing tracked yet — sync holdings or /add stocks in Telegram.")
+        return
+
+    # The urgent banner stays global — a forming death cross matters wherever held.
     urgent = [r for r in rows if r["relation"] == "above_forming"]
     if urgent:
         names = ", ".join(f"{r['symbol']} ({r['gap_pct']:.2f}%"
                           + (f", ~{r['proj']:.0f}d" if r["proj"] else "") + ")"
                           for r in urgent)
         st.warning(f"⚠️ Death cross forming: {names}")
-    st.caption("👁 = watchlist stock · 'Forming' means the moving averages are "
-               "converging with a projected cross within "
-               f"{config.DMA_FORMING_HORIZON_DAYS} trading days. Not investment advice.")
+
+    membership = _broker_symbols(store)
+    shown: set[str] = set()
+    for broker, label in (("zerodha", "Zerodha"), ("upstox", "Upstox")):
+        syms = membership.get(broker, set())
+        section = [r for r in rows if r["symbol"] in syms]
+        if not section:
+            continue
+        forming = sum(1 for r in section if r["relation"].endswith("_forming"))
+        st.markdown(f"#### {label} — {len(section)} stocks"
+                    + (f" · {forming} forming" if forming else ""))
+        _radar_table(section)
+        shown |= {r["symbol"] for r in section}
+
+    watch = [r for r in rows if r["kind"] == "watch"]
+    if watch:
+        st.markdown(f"#### 👁 Watchlist — {len(watch)} stocks")
+        _radar_table(watch)
+        shown |= {r["symbol"] for r in watch}
+
+    leftovers = [r for r in rows if r["symbol"] not in shown]
+    if leftovers:  # holdings whose broker record is missing (e.g. pre-migration)
+        st.markdown(f"#### Other — {len(leftovers)}")
+        _radar_table(leftovers)
+
+    both = membership.get("zerodha", set()) & membership.get("upstox", set())
+    if both:
+        st.caption("Held at both brokers (appears in each section): "
+                   + ", ".join(sorted(both)))
+    st.caption("'Forming' means the moving averages are converging with a "
+               f"projected cross within {config.DMA_FORMING_HORIZON_DAYS} "
+               "trading days. Not investment advice.")
 
 
 def _portfolio_tab(store) -> None:
