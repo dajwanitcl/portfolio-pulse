@@ -5,8 +5,28 @@ hold or watch, it tracks **NSE corporate filings** and **verified news**, detect
 **50/200-DMA death & golden crosses**, and pushes source-cited alerts to
 **Telegram**. A **Streamlit dashboard** is the companion view.
 
-> **Not investment advice.** Impact labels are a mechanical reading of filing/news
-> text, not a recommendation. The system never executes trades.
+> **Not investment advice.** This is a personal software tool that computes
+> public facts (exchange filings, moving averages) about stocks YOU choose. It
+> makes no recommendations and never executes trades. Impact labels, when
+> enabled, are a mechanical reading of filing/news text.
+
+## Run your own copy — free
+
+Everything runs on free tiers; the total infrastructure cost is ₹0/month. Your
+portfolio data stays entirely in YOUR accounts — nothing is shared with anyone,
+including the tool's author.
+
+1. **Fork this repo** (public fork keeps GitHub Actions free & unlimited), then
+   in your fork open the **Actions** tab and click **"Enable workflows"**.
+2. Follow **[SETUP_GUIDE.md](SETUP_GUIDE.md)** top to bottom (~40 min): Telegram
+   bot → Supabase database → your broker via Kite MCP (no API fees) →
+   GitHub secrets → optional cron-job.org pinger for on-the-dot timing.
+   Wherever an instruction shows a repo URL/path, substitute your own username.
+3. Optional extras: an Anthropic API key (~$5 lasts months) upgrades alerts
+   from headline-only to guarded AI summaries; `Start Dashboard (Mac).command`
+   opens the local dashboard.
+
+Licensed under the [MIT License](LICENSE) — free to use, modify, and share.
 
 ## The one rule: no fabricated facts
 Every alert is traceable to a primary source. The summariser only *compresses*
