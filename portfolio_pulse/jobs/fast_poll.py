@@ -26,6 +26,18 @@ def run() -> dict:
             synced = holdings.sync(store, kite)
         except Exception:
             synced = 0
+        # Backfill company names for watchlist stocks added without one (e.g.
+        # /add by bare ticker while offline) — names drive filing matching.
+        if hasattr(kite, "company_names"):
+            try:
+                nameless = {w.symbol: w.kind for w in store.list_watch() if not w.name}
+                if nameless:
+                    found = kite.company_names(list(nameless))
+                    holdings.merge_names(found)
+                    for sym, nm in found.items():
+                        store.add_watch(sym, nm, kind=nameless[sym])
+            except Exception:
+                pass
 
     symbol_names = tracked_symbol_names(store, kite)
     counts = {"synced_holdings": synced, "filings": 0, "news": 0, "commands": 0}

@@ -55,6 +55,11 @@ def _tokens_compatible(map_tokens: list[str], item_tokens: list[str]) -> bool:
     """
     if not map_tokens or not item_tokens:
         return False
+    # A single-token tracked name must equal the WHOLE normalized company name.
+    # First-word-only matching let 'ITC' claim 'ITC Hotels Limited' and would
+    # let 'RELIANCE' claim 'Reliance Power Limited' — different companies.
+    if len(map_tokens) == 1:
+        return len(item_tokens) == 1 and map_tokens[0] == item_tokens[0]
     paired = 0
     misses = 0
     for i, mtok in enumerate(map_tokens):

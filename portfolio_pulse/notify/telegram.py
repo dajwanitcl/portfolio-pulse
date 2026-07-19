@@ -128,7 +128,20 @@ def _resolve_stock(store, query: str) -> tuple[Optional[str], str]:
         pass  # search unavailable (no session / network) -> fall through
 
     if " " not in q and 2 <= len(up) <= 20:
-        return up, ""  # looks like a ticker; accept without a name
+        # Bare ticker with no broker session: resolve the company name from
+        # yfinance (public). The name matters — NSE filing matching keys on it,
+        # and a nameless stock gets no filing/news alerts (fails closed).
+        try:
+            import yfinance as yf
+
+            info = yf.Ticker(f"{up}.NS").info or {}
+            name = (info.get("longName") or info.get("shortName") or "").strip()
+            if name:
+                merge_names({up: name})
+                return up, name
+        except Exception:
+            pass
+        return up, ""  # ticker accepted; name backfills when a session is live
     return None, ""
 
 
