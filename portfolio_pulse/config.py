@@ -121,8 +121,11 @@ NEWS_SOURCE_WHITELIST: set[str] = {
 # --------------------------------------------------------------------------- #
 DMA_SHORT = 50
 DMA_LONG = 200
-# "Forming" = SMAs converging and projected to cross within this many trading days.
-DMA_FORMING_HORIZON_DAYS = 5
+# Gap slope is measured over this many trading days (smooths one-day noise).
+DMA_SLOPE_LOOKBACK = 5
+# "Forming" = SMAs converging and projected to cross within this many trading
+# days (~2 calendar weeks) — enough advance notice to actually act on.
+DMA_FORMING_HORIZON_DAYS = 10
 # Cross-check tolerance: yfinance latest close vs Kite quote. Above this ⇒ SUSPECT.
 PRICE_CROSSCHECK_TOLERANCE = 0.01  # 1%
 # How much daily history to pull so the 200-DMA is well warmed.

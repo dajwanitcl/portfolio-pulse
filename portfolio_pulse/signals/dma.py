@@ -55,31 +55,42 @@ def _project_days(gap_now: float, gap_prev: float) -> Optional[float]:
 
 
 def evaluate(symbol: str, closes: pd.Series,
-             prev_relation: Optional[str]) -> tuple[Optional[DmaSignal], str]:
-    """Return (signal_or_None, new_relation) for the latest bar.
+             prev_relation: Optional[str]
+             ) -> tuple[Optional[DmaSignal], str, dict]:
+    """Return (signal_or_None, new_relation, metrics) for the latest bar.
 
     `prev_relation` is the stored relation from the last run (None on first sight).
-    A signal is returned only when the relation changes.
+    A signal is returned only when the relation changes. `metrics` carries the
+    current sma50/sma200/gap_pct/projected_days regardless of signalling, so the
+    dashboard's cross-proximity radar stays fresh on every scan.
     """
     closes = closes.dropna()
-    if len(closes) < config.DMA_LONG + config.DMA_FORMING_HORIZON_DAYS + 1:
-        return None, prev_relation or "unknown"
+    empty = {"sma50": 0.0, "sma200": 0.0, "gap_pct": 0.0, "projected_days": None}
+    if len(closes) < config.DMA_LONG + config.DMA_SLOPE_LOOKBACK + 1:
+        return None, prev_relation or "unknown", empty
 
     sma50 = closes.rolling(config.DMA_SHORT).mean()
     sma200 = closes.rolling(config.DMA_LONG).mean()
     gap = (sma50 - sma200).dropna()
-    if len(gap) < config.DMA_FORMING_HORIZON_DAYS + 1:
-        return None, prev_relation or "unknown"
+    if len(gap) < config.DMA_SLOPE_LOOKBACK + 1:
+        return None, prev_relation or "unknown", empty
 
     s50 = float(sma50.iloc[-1])
     s200 = float(sma200.iloc[-1])
     gap_now = float(gap.iloc[-1])
-    gap_prev = float(gap.iloc[-1 - config.DMA_FORMING_HORIZON_DAYS])
+    gap_prev = float(gap.iloc[-1 - config.DMA_SLOPE_LOOKBACK])
     gap_pct = gap_now / s200 if s200 else 0.0
 
     above = gap_now >= 0
-    proj = _project_days(gap_now, gap_prev)
+    # Slope measured over the lookback window, normalised to PER-DAY so the
+    # projection is in trading days (the old code compared per-window slope
+    # against a day threshold — a 5x unit mismatch).
+    slope_per_day = (gap_now - gap_prev) / config.DMA_SLOPE_LOOKBACK
+    proj = _project_days(gap_now, gap_now - slope_per_day)
     forming = proj is not None and proj <= config.DMA_FORMING_HORIZON_DAYS
+
+    metrics = {"sma50": s50, "sma200": s200, "gap_pct": gap_pct,
+               "projected_days": proj}
 
     if above:
         relation = "above_forming" if forming else "above"
@@ -88,10 +99,10 @@ def evaluate(symbol: str, closes: pd.Series,
 
     # First sight: adopt the relation silently (no alert without a prior baseline).
     if prev_relation in (None, "unknown"):
-        return None, relation
+        return None, relation, metrics
 
     if relation == prev_relation:
-        return None, relation
+        return None, relation, metrics
 
     prev_above = prev_relation.startswith("above")
     signal: Optional[DmaSignal] = None
@@ -128,4 +139,4 @@ def evaluate(symbol: str, closes: pd.Series,
         )
     # Transitions like above_forming->above (fizzled) update state without an alert.
 
-    return signal, relation
+    return signal, relation, metrics

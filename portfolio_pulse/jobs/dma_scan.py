@@ -31,15 +31,14 @@ def run(force: bool = False) -> dict:
 
         prev = store.get_dma_state(symbol)
         prev_relation = prev["relation"] if prev else None
-        signal, new_relation = dma.evaluate(symbol, check.closes, prev_relation)
+        signal, new_relation, m = dma.evaluate(symbol, check.closes, prev_relation)
 
-        # Advance stored state regardless, so we alert only on transitions.
-        s50 = signal.sma50 if signal else _last_sma(check.closes, config.DMA_SHORT)
-        s200 = signal.sma200 if signal else _last_sma(check.closes, config.DMA_LONG)
-        gap = signal.gap_pct if signal else ((s50 - s200) / s200 if s200 else 0.0)
+        # Advance stored state + metrics every scan (the dashboard's cross-
+        # proximity radar reads these), so we alert only on transitions but
+        # always display fresh gap/projection numbers.
         store.upsert_dma_state(
-            symbol, s50, s200, new_relation, gap,
-            signal.projected_days if signal else None,
+            symbol, m["sma50"], m["sma200"], new_relation, m["gap_pct"],
+            m["projected_days"],
         )
         if not signal:
             continue
@@ -58,11 +57,6 @@ def run(force: bool = False) -> dict:
         )
         counts["alerts"] += 1
     return counts
-
-
-def _last_sma(closes, window: int) -> float:
-    s = closes.rolling(window).mean().dropna()
-    return float(s.iloc[-1]) if len(s) else 0.0
 
 
 if __name__ == "__main__":

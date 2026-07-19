@@ -1,18 +1,20 @@
-"""Portfolio Pulse dashboard (Streamlit).
+"""Portfolio Pulse dashboard (Streamlit) — state companion to the Telegram alerts.
 
-Read-mostly companion to the Telegram alerts: holdings, watchlist manager, the
-live alert feed with QC badges + source links, and per-stock DMA status. Also
-serves as the Kite token-capture callback: when Kite redirects back with
-?request_token=..., this page exchanges it and stores the daily access token.
+Built around the three questions the alert stream can't answer at a glance:
+  1. Cross Radar  — which stocks are close to a death/golden cross, and how close?
+  2. Portfolio    — P&L per holding and for the whole book.
+  3. Stock History — everything that happened to one stock over a chosen window.
 
+Also serves as the Kite token-capture callback for the (optional) API auth path.
 Runs locally against SQLite, or on Streamlit Community Cloud against Supabase.
-On Cloud, put credentials in st.secrets; the block below mirrors them into env
-BEFORE importing the app package (config reads env at import time).
+On Cloud, st.secrets are mirrored into env BEFORE importing the app package
+(config reads env at import time).
 """
 
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
@@ -41,15 +43,23 @@ _TYPE_LABEL = {
     "dma_confirmed": "Death cross", "golden_cross": "Golden cross",
 }
 
+_RELATION = {
+    # relation -> (badge, blurb, sort-bucket)  bucket: 0 = most urgent
+    "above_forming": ("🟠 Death cross forming", "50-DMA closing in on 200-DMA from above", 0),
+    "below_forming": ("🔵 Golden cross forming", "50-DMA closing in on 200-DMA from below", 1),
+    "above": ("🟢 Above", "50-DMA above 200-DMA", 2),
+    "below": ("🔴 Below", "50-DMA below 200-DMA (death cross in effect)", 3),
+    "unknown": ("⚪ Insufficient history", "needs ~200 trading days of data", 4),
+}
+
 
 def _store():
     return get_store()
 
 
 def _handle_token_callback(store) -> None:
-    """If Kite redirected here with a request_token, exchange and store it."""
-    params = st.query_params
-    token = params.get("request_token")
+    """If Kite (API path) redirected here with a request_token, exchange it."""
+    token = st.query_params.get("request_token")
     if not token:
         return
     try:
@@ -62,9 +72,9 @@ def _handle_token_callback(store) -> None:
 
 
 def _mcp_session_live() -> bool:
-    """Probe the MCP session. ~0.5s network call each render — cheap enough, and
-    deliberately uncached: a cached False would wrongly show 'Stale' for minutes
-    right after the user logs in (and vice versa after expiry)."""
+    """Probe the MCP session. ~0.5s network call each render — deliberately
+    uncached: a cached value would show a wrong state for minutes around
+    login/expiry transitions."""
     try:
         from portfolio_pulse.broker.kite_mcp import KiteMCPClient
 
@@ -74,88 +84,167 @@ def _mcp_session_live() -> bool:
         return False
 
 
+# --------------------------------------------------------------------------- #
+# Data shaping
+# --------------------------------------------------------------------------- #
+def _holdings_rows(store) -> list[dict]:
+    rows = []
+    for r in store.get_holdings():
+        qty, avg, last = r["qty"], r["avg_price"], r["last_price"]
+        invested = qty * avg
+        value = qty * last
+        rows.append({
+            "Symbol": r["symbol"], "Qty": qty, "Avg ₹": round(avg, 2),
+            "Last ₹": round(last, 2), "Invested ₹": round(invested, 0),
+            "Value ₹": round(value, 0), "P&L ₹": round(value - invested, 0),
+            "P&L %": round((last - avg) / avg * 100, 2) if avg else None,
+        })
+    return rows
+
+
+def _radar_rows(store) -> list[dict]:
+    rows = []
+    for w in store.list_watch():
+        d = store.get_dma_state(w.symbol)
+        if not d:
+            rows.append({"symbol": w.symbol, "relation": "unknown", "gap_pct": None,
+                         "proj": None, "sma50": None, "sma200": None, "updated": "—",
+                         "kind": w.kind})
+            continue
+        rows.append({
+            "symbol": w.symbol, "relation": d.get("relation") or "unknown",
+            "gap_pct": (d.get("gap_pct") or 0) * 100,
+            "proj": d.get("projected_days"),
+            "sma50": d.get("sma50"), "sma200": d.get("sma200"),
+            "updated": (d.get("updated_at") or "")[:16].replace("T", " "),
+            "kind": w.kind,
+        })
+    def sort_key(r):
+        bucket = _RELATION.get(r["relation"], _RELATION["unknown"])[2]
+        gap = abs(r["gap_pct"]) if r["gap_pct"] is not None else 999
+        return (bucket, gap)
+    return sorted(rows, key=sort_key)
+
+
+def _parse_created(ts: str) -> datetime:
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return datetime.now(timezone.utc)
+
+
+# --------------------------------------------------------------------------- #
+# Sections
+# --------------------------------------------------------------------------- #
 def _status_bar(store) -> None:
     api_fresh = kite_auth.token_is_fresh(store)
     mcp_live = False if api_fresh else _mcp_session_live()
-    holds = store.get_holdings()
-    alerts = store.list_alerts(limit=1)
-    c1, c2, c3, c4 = st.columns(4)
-    label = "Fresh ✅ (API)" if api_fresh else ("Fresh ✅ (MCP)" if mcp_live else "Stale ⚠️")
-    c1.metric("Broker session", label)
-    c2.metric("Holdings", len(holds))
-    c3.metric("Watchlist", len(store.list_watch("watch")))
-    c4.metric("Latest alert", alerts[0].created_at[:16].replace("T", " ") if alerts else "—")
+    holds = _holdings_rows(store)
+    total_val = sum(r["Value ₹"] for r in holds)
+    total_pnl = sum(r["P&L ₹"] for r in holds)
+    forming = sum(1 for r in _radar_rows(store) if r["relation"].endswith("_forming"))
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Broker session",
+              "Fresh ✅ (API)" if api_fresh else ("Fresh ✅ (MCP)" if mcp_live else "Expired ⚠️"))
+    c2.metric("Portfolio value", f"₹{total_val:,.0f}")
+    c3.metric("Total P&L", f"₹{total_pnl:,.0f}",
+              delta=f"{(total_pnl / (total_val - total_pnl) * 100):.1f}%" if total_val != total_pnl else None)
+    c4.metric("Tracked stocks", len(store.all_symbols()))
+    c5.metric("Crosses forming", forming)
     if not api_fresh and not mcp_live:
-        if config.KITE_API_KEY:
-            try:
-                url = kite_auth.build_login_url()
-                st.warning(f"Broker session expired. [Log in to Kite]({url}) to refresh holdings & price cross-checks.")
-                return
-            except Exception:
-                pass
-        st.warning(
-            "Broker session expired. Run `python -m portfolio_pulse.jobs.mcp_sync` "
-            "and tap the Login-with-Kite link to reconnect. Filings, news and DMA "
-            "alerts continue meanwhile."
-        )
+        st.caption("⚠️ Broker session expired (daily SEBI rule). Alerts continue; "
+                   "holdings refresh & price double-check resume after /connect "
+                   "in Telegram or `python -m portfolio_pulse.jobs.mcp_sync`.")
 
 
-def _holdings_section(store) -> None:
-    st.subheader("Holdings")
-    rows = store.get_holdings()
+def _radar_tab(store) -> None:
+    st.subheader("Cross Radar")
+    st.caption("Every tracked stock's 50-DMA vs 200-DMA — sorted so the stocks "
+               "closest to a crossover are on top. Updated at the 18:45 IST scan.")
+    rows = _radar_rows(store)
     if not rows:
-        st.info("No holdings synced yet. They sync automatically after the morning Kite login.")
+        st.info("Nothing tracked yet — sync holdings or /add stocks in Telegram.")
+        return
+    display = []
+    for r in rows:
+        badge, blurb, _ = _RELATION.get(r["relation"], _RELATION["unknown"])
+        display.append({
+            "Stock": r["symbol"] + ("  👁" if r["kind"] == "watch" else ""),
+            "Status": badge,
+            "Gap %": round(r["gap_pct"], 2) if r["gap_pct"] is not None else None,
+            "≈ Days to cross": round(r["proj"], 1) if r["proj"] else None,
+            "50-DMA": round(r["sma50"], 2) if r["sma50"] else None,
+            "200-DMA": round(r["sma200"], 2) if r["sma200"] else None,
+            "As of": r["updated"],
+        })
+    st.dataframe(
+        display, use_container_width=True, hide_index=True,
+        column_config={
+            "Gap %": st.column_config.NumberColumn(
+                help="(50-DMA − 200-DMA) / 200-DMA. Positive = above; the closer "
+                     "to 0, the closer a crossover.", format="%.2f%%"),
+            "≈ Days to cross": st.column_config.NumberColumn(
+                help="Linear projection of the current gap trend; only shown "
+                     "when the SMAs are converging."),
+        },
+    )
+    urgent = [r for r in rows if r["relation"] == "above_forming"]
+    if urgent:
+        names = ", ".join(f"{r['symbol']} ({r['gap_pct']:.2f}%"
+                          + (f", ~{r['proj']:.0f}d" if r["proj"] else "") + ")"
+                          for r in urgent)
+        st.warning(f"⚠️ Death cross forming: {names}")
+    st.caption("👁 = watchlist stock · 'Forming' means the moving averages are "
+               "converging with a projected cross within "
+               f"{config.DMA_FORMING_HORIZON_DAYS} trading days. Not investment advice.")
+
+
+def _portfolio_tab(store) -> None:
+    st.subheader("Holdings P&L")
+    rows = _holdings_rows(store)
+    if not rows:
+        st.info("No holdings synced yet — use /connect then /sync in Telegram.")
         return
     st.dataframe(
-        [{"Symbol": r["symbol"], "Qty": r["qty"], "Avg": r["avg_price"],
-          "Last": r["last_price"],
-          "P&L %": round((r["last_price"] - r["avg_price"]) / r["avg_price"] * 100, 2)
-          if r["avg_price"] else None}
-         for r in rows],
-        use_container_width=True, hide_index=True,
+        rows, use_container_width=True, hide_index=True,
+        column_config={
+            "P&L %": st.column_config.NumberColumn(format="%.2f%%"),
+        },
     )
+    synced = store.get_holdings()
+    if synced:
+        st.caption(f"Last synced: {synced[0]['synced_at'][:16].replace('T',' ')} UTC "
+                   "— refresh via /sync in Telegram after a broker login.")
 
 
-def _watchlist_section(store) -> None:
-    st.subheader("Watchlist")
-    with st.form("add_watch", clear_on_submit=True):
-        c1, c2 = st.columns([3, 1])
-        sym = c1.text_input("Add symbol (NSE)", placeholder="e.g. INFY", label_visibility="collapsed")
-        if c2.form_submit_button("Add", use_container_width=True) and sym.strip():
-            store.add_watch(sym.strip(), kind="watch")
-            st.rerun()
-    watch = store.list_watch("watch")
-    if not watch:
-        st.caption("No watchlist symbols yet. Add above, or use /add in Telegram.")
-        return
-    for w in watch:
-        c1, c2 = st.columns([4, 1])
-        c1.write(f"**{w.symbol}** — {w.name or '—'}")
-        if c2.button("Remove", key=f"rm_{w.symbol}", use_container_width=True):
-            store.remove_watch(w.symbol)
-            st.rerun()
-
-
-def _dma_section(store) -> None:
-    st.subheader("DMA status")
+def _history_tab(store) -> None:
+    st.subheader("Stock History")
     symbols = store.all_symbols()
-    rows = []
-    for s in symbols:
-        d = store.get_dma_state(s)
-        if not d:
-            continue
-        rows.append({
-            "Symbol": s, "Relation": d.get("relation"),
-            "50-DMA": round(d["sma50"], 2) if d.get("sma50") else None,
-            "200-DMA": round(d["sma200"], 2) if d.get("sma200") else None,
-            "Gap %": round((d.get("gap_pct") or 0) * 100, 2),
-            "Proj. days": round(d["projected_days"], 1) if d.get("projected_days") else None,
-            "Updated": (d.get("updated_at") or "")[:16].replace("T", " "),
-        })
-    if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-    else:
-        st.caption("DMA status appears after the first evening scan.")
+    if not symbols:
+        st.info("Nothing tracked yet.")
+        return
+    c1, c2 = st.columns([2, 1])
+    sym = c1.selectbox("Stock", symbols)
+    window = c2.selectbox("Window", ["7 days", "30 days", "90 days", "All"], index=1)
+    alerts = store.list_alerts(limit=500, symbol=sym)
+    if window != "All":
+        days = int(window.split()[0])
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        alerts = [a for a in alerts if _parse_created(a.created_at) >= cutoff]
+    d = store.get_dma_state(sym)
+    if d:
+        badge, blurb, _ = _RELATION.get(d.get("relation") or "unknown",
+                                        _RELATION["unknown"])
+        gap = (d.get("gap_pct") or 0) * 100
+        st.markdown(f"**{sym}** — {badge} · gap {gap:+.2f}% · {blurb}")
+    if not alerts:
+        st.info(f"No events for {sym} in the last {window.lower()} — "
+                "that itself is worth knowing.")
+        return
+    st.caption(f"{len(alerts)} event(s)")
+    for a in alerts:
+        _alert_card(a)
 
 
 def _alert_card(a) -> None:
@@ -176,14 +265,10 @@ def _alert_card(a) -> None:
     )
 
 
-def _alerts_section(store) -> None:
+def _feed_tab(store) -> None:
     st.subheader("Alert feed")
-    symbols = ["(all)"] + store.all_symbols()
-    c1, c2 = st.columns([1, 1])
-    pick = c1.selectbox("Symbol", symbols, label_visibility="collapsed")
-    limit = c2.slider("Show", 10, 200, 40, label_visibility="collapsed")
-    alerts = store.list_alerts(limit=limit,
-                              symbol=None if pick == "(all)" else pick)
+    limit = st.slider("Show latest", 10, 200, 50)
+    alerts = store.list_alerts(limit=limit)
     if not alerts:
         st.info("No alerts yet.")
         return
@@ -191,26 +276,53 @@ def _alerts_section(store) -> None:
         _alert_card(a)
 
 
+def _watchlist_tab(store) -> None:
+    st.subheader("Watchlist")
+    st.caption("Watchlist stocks get identical treatment to holdings: filings, "
+               "news, and cross alerts. Manage here or via /add /remove in Telegram.")
+    with st.form("add_watch", clear_on_submit=True):
+        c1, c2 = st.columns([3, 1])
+        sym = c1.text_input("Add symbol (NSE)", placeholder="e.g. INFY",
+                            label_visibility="collapsed")
+        if c2.form_submit_button("Add", use_container_width=True) and sym.strip():
+            store.add_watch(sym.strip(), kind="watch")
+            st.rerun()
+    watch = store.list_watch("watch")
+    if not watch:
+        st.caption("No watchlist stocks yet.")
+        return
+    for w in watch:
+        c1, c2 = st.columns([4, 1])
+        c1.write(f"**{w.symbol}** — {w.name or '(name resolves at next sync)'}")
+        if c2.button("Remove", key=f"rm_{w.symbol}", use_container_width=True):
+            store.remove_watch(w.symbol)
+            st.rerun()
+
+
 def main() -> None:
     store = _store()
     _handle_token_callback(store)
 
     st.title("📡 Portfolio Pulse")
-    st.caption("NSE filings, verified news, and 50/200-DMA crosses for your holdings "
-               "& watchlist. Alerts also delivered to Telegram. Not investment advice.")
+    st.caption("NSE filings · verified news · 50/200-DMA crosses — for your "
+               "holdings & watchlist. Alerts on Telegram; this is the state view. "
+               "Not investment advice.")
     _status_bar(store)
     st.divider()
 
-    left, right = st.columns([2, 1])
-    with left:
-        _holdings_section(store)
-        _dma_section(store)
-        _alerts_section(store)
-    with right:
-        _watchlist_section(store)
+    radar, portfolio, history, feed, watch = st.tabs(
+        ["🎯 Cross Radar", "💼 Portfolio", "🕘 Stock History", "📨 Alert Feed", "👁 Watchlist"]
+    )
+    with radar:
+        _radar_tab(store)
+    with portfolio:
+        _portfolio_tab(store)
+    with history:
+        _history_tab(store)
+    with feed:
+        _feed_tab(store)
+    with watch:
+        _watchlist_tab(store)
 
 
-if __name__ == "__main__":
-    main()
-else:
-    main()
+main()
