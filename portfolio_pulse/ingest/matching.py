@@ -35,8 +35,26 @@ def normalize_name(name: str) -> str:
 
 
 def _tokens(name: str) -> list[str]:
-    """Normalized tokens, minus single-letter fragments ('L', 'W' in Kite names)."""
-    return [t for t in normalize_name(name).split() if len(t) > 1 or t.isdigit()]
+    """Normalized tokens for matching.
+
+    Runs of consecutive single-letter fragments merge into one token, so the
+    dotted initialism 'S.J.S. Enterprises' becomes ['sjs', 'enterprises']
+    instead of losing its identity. Isolated single letters (truncation debris
+    like the trailing 'L' in broker names) are dropped as before.
+    """
+    raw = normalize_name(name).split()
+    out: list[str] = []
+    run: list[str] = []
+    for t in raw + [""]:  # sentinel flushes the last run
+        if len(t) == 1 and not t.isdigit():
+            run.append(t)
+            continue
+        if len(run) >= 2:
+            out.append("".join(run))
+        run = []
+        if t:
+            out.append(t)
+    return out
 
 
 def _tokens_compatible(map_tokens: list[str], item_tokens: list[str]) -> bool:
@@ -61,16 +79,49 @@ def _tokens_compatible(map_tokens: list[str], item_tokens: list[str]) -> bool:
     if len(map_tokens) == 1:
         return len(item_tokens) == 1 and map_tokens[0] == item_tokens[0]
     paired = 0
-    misses = 0
+    missed_at: list[int] = []
     for i, mtok in enumerate(map_tokens):
         itok = item_tokens[i] if i < len(item_tokens) else ""
-        if mtok == itok or (len(mtok) >= 2 and itok.startswith(mtok)):
+        if (mtok == itok
+                or (len(mtok) >= 2 and itok.startswith(mtok))
+                or _is_contraction(mtok, itok)):
             paired += 1
         else:
-            misses += 1
-    if misses == 0:
+            missed_at.append(i)
+    if not missed_at:
         return True
-    return misses == 1 and paired >= 2
+    if len(missed_at) > 1 or paired < 2:
+        return False
+    # One forgivable miss — but ONLY for abbreviation debris in the tracked
+    # name's LAST token: an acronym of the remaining legal words ('SEZ' for
+    # 'Special Economic Zone') or a short truncation stub (<=4 chars: 'FRGS',
+    # 'WL'). A real distinguishing word never qualifies — this is what stops
+    # 'SCHNEIDER ELECTRIC INFRA' from claiming 'Schneider Electric President
+    # Systems', a different listed company.
+    i = missed_at[0]
+    if i != len(map_tokens) - 1:
+        return False
+    mtok = map_tokens[i]
+    initials = "".join(t[0] for t in item_tokens[i:])
+    return mtok == initials or len(mtok) <= 4
+
+
+def _is_contraction(short: str, full: str) -> bool:
+    """True if `short` is a vowel-dropping contraction of `full` — the other way
+    brokers abbreviate ('SOLN'→'solutions', 'INTL'→'international',
+    'FRGS'→'forgings'): same first letter and every character of `short`
+    appearing in `full` in order. Only the tracked-name token may be the
+    contraction, mirroring the prefix rule's direction.
+    """
+    if len(short) < 3 or len(short) >= len(full) or short[0] != full[0]:
+        return False
+    pos = 0
+    for ch in short:
+        pos = full.find(ch, pos)
+        if pos == -1:
+            return False
+        pos += 1
+    return True
 
 
 def match_symbol(item_company: str, symbol_names: dict[str, str]) -> str | None:
