@@ -1,0 +1,34 @@
+name: dma-scan
+
+# EOD death/golden-cross scan. 18:45 IST = 13:15 UTC, weekdays only.
+# The job itself also skips NSE holidays via config.is_trading_day().
+on:
+  schedule:
+    - cron: "15 13 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: pulse-dma-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run DMA scan
+        env:
+          PP_STORE_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET: ${{ secrets.KITE_API_SECRET }}
+        run: python -m portfolio_pulse.jobs.dma_scan

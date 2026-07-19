@@ -1,0 +1,39 @@
+name: fast-poll
+
+# Filings + news + Telegram command drain.
+# ~08:00–24:00 IST is 02:30–18:30 UTC. '*/10 2-18' covers it with a small margin.
+# NOTE (free-tier minutes): every 10 min for ~17h ≈ 100 runs/day. On a PRIVATE
+# repo that can exceed the 2,000 free minutes/month — use a PUBLIC repo (Actions
+# minutes are unlimited there; all secrets stay in GitHub Secrets, never in code),
+# or widen the interval to '*/15'. See README "Hosting".
+on:
+  schedule:
+    - cron: "*/10 2-18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: pulse-fast-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run fast poll
+        env:
+          PP_STORE_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET: ${{ secrets.KITE_API_SECRET }}
+        run: python -m portfolio_pulse.jobs.fast_poll

@@ -1,0 +1,13 @@
+# Version ranges capped to tested-safe majors so a fresh install months later
+# cannot pull a future breaking release. Mirrors the Market Move convention.
+feedparser>=6.0,<7            # NSE + news RSS parsing
+requests>=2.31,<3             # feed/quote fetching
+yfinance>=0.2.40,<2           # free .NS daily closes for DMA
+pandas>=2.2,<4                # SMA computation
+numpy>=2.0,<3
+kiteconnect>=5.0,<6           # Zerodha holdings + quotes (official SDK)
+python-telegram-bot>=21.0,<22 # Telegram push + bot commands
+anthropic>=0.40,<1            # Haiku summariser
+streamlit>=1.35,<2            # dashboard
+python-dotenv>=1.0,<2         # load .env in local/dev
+supabase>=2.0,<3              # prod store backend (Phase 8)

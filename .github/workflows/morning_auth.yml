@@ -1,0 +1,32 @@
+name: morning-auth
+
+# Daily Kite re-auth nudge. 08:15 IST = 02:45 UTC, weekdays.
+on:
+  schedule:
+    - cron: "45 2 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Send re-auth nudge
+        env:
+          PP_STORE_BACKEND: supabase
+          # Set repository variable PP_AUTH_NUDGE=off (Settings → Variables) for
+          # set-and-forget mode: no daily login reminder. Defaults to on.
+          PP_AUTH_NUDGE: ${{ vars.PP_AUTH_NUDGE || 'on' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET: ${{ secrets.KITE_API_SECRET }}
+        run: python -m portfolio_pulse.jobs.morning_auth
