@@ -1,9 +1,13 @@
 [theme]
-primaryColor = "#0969da"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f6f8fa"
-textColor = "#1f2328"
+# Dark "terminal" theme: deep navy surfaces, teal accent.
+primaryColor = "#2DD4BF"
+backgroundColor = "#0D1420"
+secondaryBackgroundColor = "#171F2E"
+textColor = "#E6EAF2"
 font = "sans serif"
 
 [server]
 headless = true
+
+[browser]
+gatherUsageStats = false

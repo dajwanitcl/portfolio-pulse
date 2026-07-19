@@ -34,10 +34,71 @@ from portfolio_pulse.store import get_store  # noqa: E402
 
 st.set_page_config(page_title="Portfolio Pulse", page_icon="📡", layout="wide")
 
+# Dark-surface status colors (status is never color-alone here: every badge and
+# QC label pairs the color with its text/icon).
 _QC_COLOR = {
-    "CONFIRMED": "#1a7f37", "SINGLE-SOURCE": "#9a6700", "PARTIAL": "#9a6700",
-    "INSUFFICIENT": "#9a6700", "SUSPECT": "#cf222e", "NO-DATA": "#57606a",
+    "CONFIRMED": "#34C08B", "SINGLE-SOURCE": "#E2B93B", "PARTIAL": "#E2B93B",
+    "INSUFFICIENT": "#E2B93B", "SUSPECT": "#F87171", "NO-DATA": "#8B93A7",
 }
+
+_CSS = """
+<style>
+/* ---- hide Streamlit chrome for an app-like feel ---- */
+#MainMenu, footer, header[data-testid="stHeader"] {visibility: hidden; height: 0;}
+.block-container {padding-top: 2.2rem; max-width: 1200px;}
+
+/* ---- typography ---- */
+html, body, [class*="css"] {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1 {letter-spacing: -0.02em; font-weight: 750;}
+h4 {letter-spacing: -0.01em; color: #C7CEDB;}
+
+/* ---- metric tiles as cards ---- */
+div[data-testid="stMetric"] {
+  background: linear-gradient(180deg, #171F2E 0%, #131A27 100%);
+  border: 1px solid #232D40;
+  border-radius: 12px;
+  padding: 14px 16px 10px 16px;
+}
+div[data-testid="stMetric"] label {color: #98A2B3 !important; font-size: 0.78rem;
+  text-transform: uppercase; letter-spacing: 0.06em;}
+div[data-testid="stMetricValue"] {
+  font-variant-numeric: tabular-nums; font-weight: 650; font-size: 1.55rem;
+}
+div[data-testid="stMetricDelta"] {font-variant-numeric: tabular-nums;}
+
+/* ---- tabs ---- */
+button[data-baseweb="tab"] {
+  font-weight: 600; letter-spacing: 0.01em; padding: 0.6rem 1.1rem;
+}
+div[data-baseweb="tab-highlight"] {background-color: #2DD4BF;}
+
+/* ---- dataframes ---- */
+div[data-testid="stDataFrame"] {
+  border: 1px solid #232D40; border-radius: 12px; overflow: hidden;
+}
+
+/* ---- buttons & inputs ---- */
+button[kind="secondaryFormSubmit"], .stButton button {
+  border-radius: 10px; border: 1px solid #2A3548;
+}
+.stButton button:hover {border-color: #2DD4BF; color: #2DD4BF;}
+
+/* ---- pulse dot in the title ---- */
+.pulse-dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  background: #2DD4BF; margin-right: 10px; vertical-align: middle;
+  box-shadow: 0 0 0 rgba(45, 212, 191, 0.6); animation: pulse 2.2s infinite;
+}
+@keyframes pulse {
+  0% {box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.45);}
+  70% {box-shadow: 0 0 0 12px rgba(45, 212, 191, 0);}
+  100% {box-shadow: 0 0 0 0 rgba(45, 212, 191, 0);}
+}
+</style>
+"""
 _TYPE_LABEL = {
     "filing": "Exchange Filing", "news": "News", "dma_forming": "DMA forming",
     "dma_confirmed": "Death cross", "golden_cross": "Golden cross",
@@ -216,7 +277,9 @@ def _radar_table(rows: list[dict]) -> None:
             "Stock": r["symbol"],
             "Status": badge,
             "Gap %": round(r["gap_pct"], 2) if r["gap_pct"] is not None else None,
-            "≈ Days to cross": round(r["proj"], 1) if r["proj"] else None,
+            # A projection years out is noise — only show near-term convergence.
+            "≈ Days to cross": round(r["proj"], 1)
+            if r["proj"] and r["proj"] <= 60 else None,
             "50-DMA": round(r["sma50"], 2) if r["sma50"] else None,
             "200-DMA": round(r["sma200"], 2) if r["sma200"] else None,
             "As of": r["updated"],
@@ -266,7 +329,8 @@ def _radar_tab(store) -> None:
 
     watch = [r for r in rows if r["kind"] == "watch"]
     if watch:
-        st.markdown(f"#### 👁 Watchlist — {len(watch)} stocks")
+        plural = "stock" if len(watch) == 1 else "stocks"
+        st.markdown(f"#### 👁 Watchlist — {len(watch)} {plural}")
         _radar_table(watch)
         shown |= {r["symbol"] for r in watch}
 
@@ -349,19 +413,25 @@ def _history_tab(store) -> None:
 
 
 def _alert_card(a) -> None:
-    color = _QC_COLOR.get(a.qc_status, "#57606a")
+    color = _QC_COLOR.get(a.qc_status, "#8B93A7")
     type_label = _TYPE_LABEL.get(a.alert_type, a.alert_type)
     when = a.created_at[:16].replace("T", " ")
-    src = f'&nbsp;·&nbsp;<a href="{a.source_url}" target="_blank">source</a>' if a.source_url else ""
+    src = (f'&nbsp;·&nbsp;<a href="{a.source_url}" target="_blank" '
+           f'style="color:#2DD4BF;text-decoration:none">source ↗</a>'
+           if a.source_url else "")
     body = a.summary if a.summary and a.summary != a.title else ""
-    impact = f'<div style="color:#57606a;font-size:0.85em">{a.impact}</div>' if a.impact else ""
+    impact = (f'<div style="color:#98A2B3;font-size:0.85em;margin-top:2px">'
+              f'{a.impact}</div>' if a.impact else "")
     st.markdown(
-        f"""<div style="border:1px solid #d0d7de;border-left:4px solid {color};
-        border-radius:8px;padding:10px 14px;margin-bottom:8px">
-        <div style="font-size:0.8em;color:#57606a">{when} · {a.symbol} · {a.source_type or type_label}
-        · <span style="color:{color}">{a.qc_status}</span>{src}</div>
-        <div style="font-weight:600">{a.title}</div>
-        <div>{body}</div>{impact}</div>""",
+        f"""<div style="background:#141B29;border:1px solid #232D40;
+        border-left:3px solid {color};border-radius:10px;
+        padding:12px 16px;margin-bottom:10px">
+        <div style="font-size:0.78em;color:#8B93A7;letter-spacing:0.02em">
+        {when} &nbsp;·&nbsp; <b style="color:#C7CEDB">{a.symbol}</b>
+        &nbsp;·&nbsp; {a.source_type or type_label}
+        &nbsp;·&nbsp; <span style="color:{color}">{a.qc_status}</span>{src}</div>
+        <div style="font-weight:600;color:#E6EAF2;margin-top:4px">{a.title}</div>
+        <div style="color:#C7CEDB">{body}</div>{impact}</div>""",
         unsafe_allow_html=True,
     )
 
@@ -404,7 +474,11 @@ def main() -> None:
     store = _store()
     _handle_token_callback(store)
 
-    st.title("📡 Portfolio Pulse")
+    st.markdown(_CSS, unsafe_allow_html=True)
+    st.markdown(
+        '<h1><span class="pulse-dot"></span>Portfolio Pulse</h1>',
+        unsafe_allow_html=True,
+    )
     st.caption("NSE filings · verified news · 50/200-DMA crosses — for your "
                "holdings & watchlist. Alerts on Telegram; this is the state view. "
                "Not investment advice.")
