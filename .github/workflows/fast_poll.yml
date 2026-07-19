@@ -8,7 +8,10 @@ name: fast-poll
 # or widen the interval to '*/15'. See README "Hosting".
 on:
   schedule:
-    - cron: "*/10 2-18 * * *"
+    # Off-peak minute offsets — GitHub throttles/drops crons on the congested
+    # :00/:10/:20... slots hardest; odd offsets measurably improve delivery.
+    # GH cron remains best-effort: expect ~10-20 min typical, worse at peak.
+    - cron: "4,14,24,34,44,54 2-18 * * *"
   workflow_dispatch:
 
 concurrency:
