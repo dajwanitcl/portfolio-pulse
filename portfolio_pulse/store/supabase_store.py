@@ -57,6 +57,9 @@ class SupabaseStore:
 
     def sync_holdings(self, rows: Iterable[dict[str, Any]]) -> int:
         rows = list(rows)
+        # Existing names are precious (they drive NSE filing matching) — never
+        # overwrite a real name with an empty one. Mirrors the SQLite semantics.
+        current = {w.symbol: w.name for w in self.list_watch()}
         # Replace snapshot (PostgREST delete needs a filter that matches all rows).
         self._t("holdings_snapshot").delete().neq("symbol", "\x00").execute()
         n = 0
@@ -67,8 +70,9 @@ class SupabaseStore:
                 "avg_price": float(r.get("avg_price", 0)),
                 "last_price": float(r.get("last_price", 0)), "synced_at": _iso(),
             }, on_conflict="symbol").execute()
+            name = str(r.get("name", "")) or current.get(sym, "")
             self._t("watchlist").upsert({
-                "symbol": sym, "name": str(r.get("name", "")), "kind": "holding",
+                "symbol": sym, "name": name, "kind": "holding",
                 "added_at": _iso(),
             }, on_conflict="symbol").execute()
             n += 1

@@ -39,27 +39,27 @@ def _tokens(name: str) -> list[str]:
     return [t for t in normalize_name(name).split() if len(t) > 1 or t.isdigit()]
 
 
-def _tokens_compatible(a: list[str], b: list[str]) -> bool:
-    """True if token lists refer to the same company, tolerating abbreviations.
+def _tokens_compatible(map_tokens: list[str], item_tokens: list[str]) -> bool:
+    """True if a tracked name (map_tokens) matches a filing's company (item_tokens).
 
     Broker instrument names are abbreviated ('ADANI PORT & SEZ', 'ZAGGLE PREPA
     OCEAN SER L') while exchange filings carry full legal names ('Adani Ports and
-    Special Economic Zone Limited'). Rule: pair tokens positionally on the
-    shorter list; a pair matches if equal or one is a prefix of the other
-    (>=2 chars). One unpaired token is forgiven only after two exact-or-prefix
-    pairs have already matched (handles acronym tails like 'SEZ'), which keeps
-    'TATA POWER' from ever matching 'Tata Motors' (only 1 leading pair).
+    Special Economic Zone Limited'). Every tracked-name token must pair with the
+    filing token at the same position: equal, or the tracked token is a PREFIX of
+    the filing word ('port'->'ports', 'manage'->'management'). The reverse
+    direction is deliberately forbidden — allowing the filing word to prefix the
+    tracked token once let the bare ticker 'tatapower' pair with the word 'tata'
+    and mis-attribute a Tata Capital filing to TATAPOWER. One unpaired token is
+    forgiven only after two paired ones (acronym tails like 'SEZ'); filing-name
+    tail tokens beyond the tracked name ('special economic zone...') are free.
     """
-    if not a or not b:
+    if not map_tokens or not item_tokens:
         return False
-    short, long = (a, b) if len(a) <= len(b) else (b, a)
     paired = 0
     misses = 0
-    for i, tok in enumerate(short):
-        other = long[i] if i < len(long) else ""
-        if tok == other or (len(tok) >= 2 and other.startswith(tok)) or (
-            len(other) >= 2 and tok.startswith(other)
-        ):
+    for i, mtok in enumerate(map_tokens):
+        itok = item_tokens[i] if i < len(item_tokens) else ""
+        if mtok == itok or (len(mtok) >= 2 and itok.startswith(mtok)):
             paired += 1
         else:
             misses += 1
