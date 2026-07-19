@@ -247,13 +247,28 @@ def handle_update(update: dict, store) -> Optional[str]:
         return (f"Holdings ({len(hold)}): {', '.join(hold) or '—'}\n"
                 f"Watchlist ({len(watch)}): {', '.join(watch) or '—'}")
     if cmd == "holdings":
-        rows = store.get_holdings()
-        if not rows:
-            return "No holdings synced yet."
-        return "\n".join(
-            f"{r['symbol']}: {r['qty']:g} @ {r['avg_price']:g} (last {r['last_price']:g})"
-            for r in rows
-        )
+        import json as _json
+
+        sections = []
+        for broker, label in (("zerodha", "Zerodha"), ("upstox", "Upstox")):
+            raw = store.get_meta(f"holdings:{broker}")
+            if not raw:
+                continue
+            try:
+                recs = _json.loads(raw)
+            except _json.JSONDecodeError:
+                continue
+            if recs:
+                lines = [f"{r['symbol']}: {r['qty']:g} @ {r['avg_price']:g}"
+                         for r in sorted(recs, key=lambda x: x.get("symbol", ""))]
+                sections.append(f"<b>{label}</b> ({len(recs)})\n" + "\n".join(lines))
+        if not sections:
+            rows = store.get_holdings()
+            if not rows:
+                return "No holdings synced yet."
+            return "\n".join(f"{r['symbol']}: {r['qty']:g} @ {r['avg_price']:g}"
+                             for r in rows)
+        return "\n\n".join(sections)
     if cmd == "connect":
         return _broker_connect_reply(store, arg)
     if cmd == "sync":

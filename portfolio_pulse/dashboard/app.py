@@ -102,6 +102,39 @@ def _holdings_rows(store) -> list[dict]:
     return rows
 
 
+def _broker_holdings(store) -> dict[str, list[dict]]:
+    """Per-broker holdings straight from the raw per-broker records (no merging).
+
+    The user chose separate broker sections over a combined book: a stock held
+    at both brokers appears in each section with that broker's own qty/avg.
+    """
+    import json as _json
+
+    out: dict[str, list[dict]] = {}
+    for broker in ("zerodha", "upstox"):
+        raw = store.get_meta(f"holdings:{broker}")
+        if not raw:
+            continue
+        try:
+            recs = _json.loads(raw)
+        except _json.JSONDecodeError:
+            continue
+        rows = []
+        for r in recs:
+            qty = float(r.get("qty", 0))
+            avg = float(r.get("avg_price", 0))
+            last = float(r.get("last_price", 0))
+            rows.append({
+                "Symbol": r.get("symbol", ""), "Qty": qty, "Avg ₹": round(avg, 2),
+                "Last ₹": round(last, 2), "Invested ₹": round(qty * avg, 0),
+                "Value ₹": round(qty * last, 0), "P&L ₹": round(qty * (last - avg), 0),
+                "P&L %": round((last - avg) / avg * 100, 2) if avg else None,
+            })
+        if rows:
+            out[broker] = sorted(rows, key=lambda r: r["Symbol"])
+    return out
+
+
 def _radar_rows(store) -> list[dict]:
     rows = []
     for w in store.list_watch():
@@ -201,17 +234,34 @@ def _radar_tab(store) -> None:
 
 
 def _portfolio_tab(store) -> None:
-    st.subheader("Holdings P&L")
-    rows = _holdings_rows(store)
-    if not rows:
+    st.subheader("Holdings P&L — by broker")
+    per_broker = _broker_holdings(store)
+    if not per_broker:
         st.info("No holdings synced yet — use /connect then /sync in Telegram.")
         return
-    st.dataframe(
-        rows, use_container_width=True, hide_index=True,
-        column_config={
-            "P&L %": st.column_config.NumberColumn(format="%.2f%%"),
-        },
-    )
+    labels = {"zerodha": "Zerodha", "upstox": "Upstox"}
+    for broker, rows in per_broker.items():
+        invested = sum(r["Invested ₹"] for r in rows)
+        value = sum(r["Value ₹"] for r in rows)
+        pnl = value - invested
+        pct = (pnl / invested * 100) if invested else 0.0
+        st.markdown(f"#### {labels.get(broker, broker.title())} — {len(rows)} stocks")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Invested", f"₹{invested:,.0f}")
+        c2.metric("Value", f"₹{value:,.0f}")
+        c3.metric("P&L", f"₹{pnl:,.0f}", delta=f"{pct:.1f}%")
+        st.dataframe(
+            rows, use_container_width=True, hide_index=True,
+            column_config={
+                "P&L %": st.column_config.NumberColumn(format="%.2f%%"),
+            },
+        )
+    overlap = set.intersection(*[{r["Symbol"] for r in rows}
+                                 for rows in per_broker.values()]) \
+        if len(per_broker) > 1 else set()
+    if overlap:
+        st.caption("Held at both brokers (shown separately in each section): "
+                   + ", ".join(sorted(overlap)))
     synced = store.get_holdings()
     if synced:
         st.caption(f"Last synced: {synced[0]['synced_at'][:16].replace('T',' ')} UTC "
