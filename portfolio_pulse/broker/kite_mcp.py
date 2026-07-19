@@ -1,15 +1,8 @@
 """Zerodha Kite MCP client — broker connection with NO API app/key/secret.
 
-Talks to Zerodha's official hosted MCP server (https://mcp.kite.trade/mcp,
-streamable-HTTP JSON-RPC, verified live) exactly like an AI assistant would:
-
-    initialize -> notifications/initialized -> tools/call
-
-Auth is the "Login with Kite" flow: the `login` tool returns a URL, the user taps
-it once, and the server-side session is then authorised. The MCP session id is
-persisted in the store (meta key) so it survives across cron runs until Kite's
-daily expiry — after which alerts keep flowing and only holdings/price
-cross-checks pause (see set-and-forget mode in the README).
+Thin subclass of the shared MCP core (broker/mcp_core.py). Kite's auth is its
+own `login` tool: it returns a time-signed URL the user taps once; the session
+id (persisted in store meta) is then authorised until Kite's daily expiry.
 
 Read-only by design: although the server also exposes order-placement tools,
 this client only ever calls login/profile/holdings/ltp/search_instruments.
@@ -17,156 +10,20 @@ this client only ever calls login/profile/holdings/ltp/search_instruments.
 
 from __future__ import annotations
 
-import json
 import re
-from typing import Any, Optional
-
-import requests
+from typing import Any
 
 from portfolio_pulse import config
+from portfolio_pulse.broker.mcp_core import MCPError, MCPHTTPClient, NotLoggedIn
 
-_SESSION_KEY = "kite_mcp_session"
-_PROTOCOL = "2025-03-26"
-
-
-class MCPError(RuntimeError):
-    pass
+__all__ = ["KiteMCPClient", "MCPError", "NotLoggedIn"]
 
 
-class NotLoggedIn(MCPError):
-    """The MCP session exists but hasn't completed the Kite login."""
+class KiteMCPClient(MCPHTTPClient):
+    session_meta_key = "kite_mcp_session"
 
-
-class KiteMCPClient:
-    """Minimal MCP client for the hosted Kite server.
-
-    Duck-types the two KiteConnect methods the rest of the codebase uses
-    (`holdings()`, `ltp()`), so `broker.holdings.sync` and
-    `signals.prices.kite_quote` work unchanged with either client.
-    """
-
-    def __init__(self, store=None, url: Optional[str] = None):
-        self.url = url or config.KITE_MCP_URL
-        self.store = store
-        self.session_id: Optional[str] = None
-        self._rpc_id = 0
-        if store is not None:
-            self.session_id = store.get_meta(_SESSION_KEY)
-
-    # ------------------------------------------------------------------ #
-    # JSON-RPC plumbing
-    # ------------------------------------------------------------------ #
-    def _post(self, payload: dict, timeout: int = 30) -> Optional[dict]:
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-        }
-        if self.session_id:
-            headers["Mcp-Session-Id"] = self.session_id
-        resp = requests.post(self.url, json=payload, headers=headers, timeout=timeout)
-        sid = resp.headers.get("Mcp-Session-Id") or resp.headers.get("mcp-session-id")
-        if sid and sid != self.session_id:
-            self.session_id = sid
-            if self.store is not None:
-                self.store.set_meta(_SESSION_KEY, sid)
-        if resp.status_code >= 400:
-            raise MCPError(f"MCP HTTP {resp.status_code}: {resp.text[:200]}")
-        return self._parse_body(resp)
-
-    @staticmethod
-    def _parse_body(resp: requests.Response) -> Optional[dict]:
-        """Handle both plain-JSON and SSE-framed responses."""
-        text = resp.text or ""
-        if not text.strip():
-            return None
-        if "text/event-stream" in resp.headers.get("Content-Type", ""):
-            last = None
-            for line in text.splitlines():
-                if line.startswith("data:"):
-                    data = line[5:].strip()
-                    if data:
-                        try:
-                            msg = json.loads(data)
-                            if "result" in msg or "error" in msg:
-                                last = msg
-                        except json.JSONDecodeError:
-                            continue
-            return last
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return None
-
-    def _rpc(self, method: str, params: Optional[dict] = None) -> Any:
-        self._rpc_id += 1
-        payload: dict[str, Any] = {"jsonrpc": "2.0", "id": self._rpc_id, "method": method}
-        if params is not None:
-            payload["params"] = params
-        msg = self._post(payload)
-        if msg is None:
-            raise MCPError(f"empty MCP response for {method}")
-        if "error" in msg:
-            raise MCPError(f"{method}: {msg['error'].get('message', msg['error'])}")
-        return msg.get("result")
-
-    def _notify(self, method: str) -> None:
-        try:
-            self._post({"jsonrpc": "2.0", "method": method})
-        except MCPError:
-            pass  # notifications are fire-and-forget
-
-    # ------------------------------------------------------------------ #
-    # Session
-    # ------------------------------------------------------------------ #
-    def connect(self) -> dict:
-        """Fresh initialize handshake. Returns serverInfo."""
-        self.session_id = None
-        result = self._rpc("initialize", {
-            "protocolVersion": _PROTOCOL,
-            "capabilities": {},
-            "clientInfo": {"name": "portfolio-pulse", "version": "0.1.0"},
-        })
-        self._notify("notifications/initialized")
-        return result.get("serverInfo", {})
-
-    def ensure_session(self) -> None:
-        """Reuse the persisted session if the server still accepts it, else reconnect."""
-        if self.session_id:
-            try:
-                self._rpc("tools/list")
-                return
-            except MCPError:
-                pass  # stale/unknown session -> fall through to a fresh handshake
-        self.connect()
-
-    # ------------------------------------------------------------------ #
-    # Tools
-    # ------------------------------------------------------------------ #
-    def call_tool(self, name: str, arguments: Optional[dict] = None) -> str:
-        """Invoke one MCP tool and return its text content (raises on error)."""
-        result = self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
-        chunks = [c.get("text", "") for c in result.get("content", [])
-                  if c.get("type") == "text"]
-        text = "\n".join(chunks).strip()
-        if result.get("isError"):
-            if re.search(r"log\s*in|login|session|authoris|authoriz", text, re.I):
-                raise NotLoggedIn(text[:300])
-            raise MCPError(text[:300])
-        return text
-
-    @staticmethod
-    def _json(text: str) -> Any:
-        """Extract the first JSON object/array embedded in a tool's text reply."""
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            m = re.search(r"[\[{].*[\]}]", text, re.S)
-            if m:
-                try:
-                    return json.loads(m.group(0))
-                except json.JSONDecodeError:
-                    pass
-        raise MCPError(f"unparseable tool reply: {text[:200]}")
+    def __init__(self, store=None, url: str | None = None):
+        super().__init__(store, url or config.KITE_MCP_URL)
 
     def login_url(self) -> str:
         """Start the Login-with-Kite flow; returns the URL for the user to tap."""
@@ -180,12 +37,10 @@ class KiteMCPClient:
         try:
             self.call_tool("get_profile")
             return True
-        except NotLoggedIn:
-            return False
-        except MCPError:
+        except (NotLoggedIn, MCPError):
             return False
 
-    # ---- KiteConnect-compatible surface ------------------------------ #
+    # ---- KiteConnect-compatible surface ------------------------------------
     def holdings(self) -> list[dict[str, Any]]:
         """Holdings as dicts with KiteConnect field names (tradingsymbol, ...)."""
         data = self._json(self.call_tool("get_holdings"))

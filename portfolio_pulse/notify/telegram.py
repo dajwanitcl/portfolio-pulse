@@ -74,8 +74,8 @@ _HELP = (
     "/newlist — start a fresh, empty watchlist (holdings untouched)\n"
     "/list — show watchlist + holdings\n"
     "/holdings — show current holdings snapshot\n"
-    "/connect — connect/reconnect your broker (Zerodha via MCP)\n"
-    "/sync — refresh holdings from the broker"
+    "/connect [zerodha|upstox] — connect/reconnect a broker (MCP)\n"
+    "/sync — refresh holdings from every connected broker"
 )
 
 
@@ -145,43 +145,61 @@ def _resolve_stock(store, query: str) -> tuple[Optional[str], str]:
     return None, ""
 
 
-def _broker_connect_reply(store) -> str:
-    """Fresh Login-with-Kite link (or 'already connected'). Used by /connect."""
+def _broker_connect_reply(store, which: str = "zerodha") -> str:
+    """Connect/reconnect instructions per broker. Used by /connect [broker]."""
+    which = (which or "zerodha").strip().lower()
+
+    if which in ("upstox", "u"):
+        from portfolio_pulse.broker.upstox_mcp import UpstoxMCPClient, load_oauth
+
+        if load_oauth(store).get("access_token") and UpstoxMCPClient(store).connected():
+            return "Upstox already connected. Send /sync to refresh holdings."
+        return (
+            "🔐 <b>Connect Upstox</b> (read-only, official Upstox MCP):\n"
+            "Upstox uses a browser OAuth flow, so run this once on your computer:\n"
+            "<code>python -m portfolio_pulse.jobs.upstox_connect</code>\n"
+            "It opens the Upstox login, then syncs automatically. After that the "
+            "cloud renews the session by itself whenever Upstox allows."
+        )
+
     from portfolio_pulse.broker.kite_mcp import KiteMCPClient, MCPError
 
     mcp = KiteMCPClient(store)
     try:
         mcp.ensure_session()
         if mcp.logged_in():
-            return ("Broker already connected (Zerodha via MCP). "
-                    "Send /sync to refresh holdings.")
+            return ("Zerodha already connected. Send /sync to refresh holdings.\n"
+                    "Also have Upstox? Send /connect upstox")
         url = mcp.login_url()
     except MCPError as exc:
         return f"Could not reach the Kite MCP server: {exc}"
     return (
-        "🔐 Connect Zerodha (read-only, via official Kite MCP):\n"
+        "🔐 <b>Connect Zerodha</b> (read-only, via official Kite MCP):\n"
         f'<a href="{url}">Login with Kite</a>\n'
         "⏱ The link expires in a few minutes — tap it right away, "
         "then send /sync to pull your holdings.\n"
-        "<i>(Zerodha is currently the only Indian broker with an official MCP "
-        "server; more will be added as they appear.)</i>"
+        "<i>Also have Upstox? Send /connect upstox</i>"
     )
 
 
 def _broker_sync_reply(store) -> str:
-    """Refresh holdings via whichever broker session is live. Used by /sync."""
-    from portfolio_pulse.broker import get_broker, holdings
+    """Refresh holdings from every live broker session. Used by /sync."""
+    from portfolio_pulse.broker import get_live_brokers, holdings
 
-    client = get_broker(store)
-    if client is None:
+    brokers = get_live_brokers(store)
+    if not brokers:
         return ("No live broker session — reconnect first:\n"
                 + _broker_connect_reply(store))
-    try:
-        n = holdings.sync(store, client)
-    except Exception as exc:  # broker hiccups must never crash the bot
-        return f"Holdings refresh failed: {exc}"
+    parts = []
+    for name, client in brokers:
+        try:
+            n = holdings.sync(store, client, broker=name)
+            parts.append(f"{name}: {n}")
+        except Exception as exc:  # broker hiccups must never crash the bot
+            parts.append(f"{name}: failed ({str(exc)[:80]})")
     syms = [r["symbol"] for r in store.get_holdings()]
-    return f"✅ Synced {n} holdings: {', '.join(syms) or '—'}"
+    return (f"✅ Synced — {', '.join(parts)}\n"
+            f"Combined portfolio ({len(syms)}): {', '.join(syms) or '—'}")
 
 
 def handle_update(update: dict, store) -> Optional[str]:
@@ -237,7 +255,7 @@ def handle_update(update: dict, store) -> Optional[str]:
             for r in rows
         )
     if cmd == "connect":
-        return _broker_connect_reply(store)
+        return _broker_connect_reply(store, arg)
     if cmd == "sync":
         return _broker_sync_reply(store)
     return _HELP

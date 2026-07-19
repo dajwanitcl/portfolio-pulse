@@ -25,7 +25,8 @@ def fetch_holdings(kite) -> list[dict[str, Any]]:
     for h in kite.holdings():
         rows.append({
             "symbol": h.get("tradingsymbol", "").strip().upper(),
-            "name": "",  # filled from the instruments map by callers if needed
+            # Upstox rows carry company_name inline; Kite rows get names later.
+            "name": (h.get("company_name") or "").strip(),
             "qty": h.get("quantity", 0) or h.get("opening_quantity", 0),
             "avg_price": h.get("average_price", 0),
             "last_price": h.get("last_price", 0),
@@ -102,20 +103,72 @@ def symbol_name_map(kite, symbols: Optional[list[str]] = None) -> dict[str, str]
     return {s.upper(): mapping.get(s.upper(), s.upper()) for s in symbols}
 
 
-def sync(store, kite) -> int:
-    """Fetch holdings, enrich names, and sync into the store. Returns count.
+def sync(store, kite, broker: str = "zerodha") -> int:
+    """Fetch one broker's holdings and merge into the multi-broker snapshot.
 
-    Works with either broker client (Kite Connect API or Kite MCP). The MCP
-    client has no bulk instruments dump, so it enriches company names via
-    per-symbol search (company_names) and merges them into the shared cache the
-    NSE-filings matcher reads. Auto-promotes each holding to watchlist
-    kind='holding' (done inside the store).
+    Per-broker raw rows are kept in store meta (`holdings:{broker}` as JSON) and
+    the visible `holdings_snapshot` is the AGGREGATE across brokers: same stock
+    held at two brokers gets total quantity and weighted average price. This
+    needs no schema change, so it works identically on SQLite and Supabase.
+
+    Company names: MCP clients enrich via per-symbol search or per-row
+    company_name fields; results merge into the cache the NSE-filings matcher
+    reads. Every holding is auto-promoted to watchlist kind='holding'.
     """
+    import json as _json
+
     rows = fetch_holdings(kite)
     syms = [r["symbol"] for r in rows]
-    if hasattr(kite, "company_names"):  # MCP path
-        merge_names(kite.company_names(syms))
+
+    # Name enrichment: per-row company_name (Upstox) first, then search (Kite MCP).
+    inline = {r["symbol"]: r.get("name", "") for r in rows if r.get("name")}
+    if inline:
+        merge_names(inline)
+    if hasattr(kite, "company_names"):
+        missing = [s for s in syms if s not in inline]
+        if missing:
+            merge_names(kite.company_names(missing))
     names = symbol_name_map(kite, syms)
     for r in rows:
-        r["name"] = names.get(r["symbol"], r["symbol"])
-    return store.sync_holdings(rows)
+        r["name"] = r.get("name") or names.get(r["symbol"], r["symbol"])
+
+    store.set_meta(f"holdings:{broker}", _json.dumps(rows))
+    _write_aggregate(store)
+    return len(rows)
+
+
+_KNOWN_BROKERS = ("zerodha", "upstox")
+
+
+def _write_aggregate(store) -> None:
+    """Rebuild holdings_snapshot as the aggregate of all brokers' meta rows."""
+    import json as _json
+
+    merged: dict[str, dict] = {}
+    for broker in _KNOWN_BROKERS:
+        raw = store.get_meta(f"holdings:{broker}")
+        if not raw:
+            continue
+        try:
+            rows = _json.loads(raw)
+        except _json.JSONDecodeError:
+            continue
+        for r in rows:
+            sym = str(r.get("symbol", "")).strip().upper()
+            if not sym:
+                continue
+            qty = float(r.get("qty", 0))
+            avg = float(r.get("avg_price", 0))
+            cur = merged.setdefault(sym, {"symbol": sym, "name": r.get("name", ""),
+                                          "qty": 0.0, "cost": 0.0, "last_price": 0.0})
+            cur["qty"] += qty
+            cur["cost"] += qty * avg
+            cur["last_price"] = float(r.get("last_price", 0)) or cur["last_price"]
+            if not cur["name"]:
+                cur["name"] = r.get("name", "")
+    out = []
+    for r in merged.values():
+        out.append({"symbol": r["symbol"], "name": r["name"], "qty": r["qty"],
+                    "avg_price": (r["cost"] / r["qty"]) if r["qty"] else 0.0,
+                    "last_price": r["last_price"]})
+    store.sync_holdings(out)

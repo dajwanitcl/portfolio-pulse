@@ -8,7 +8,7 @@ flow (matched via the day-cached instruments name map).
 
 from __future__ import annotations
 
-from portfolio_pulse.broker import get_broker, holdings
+from portfolio_pulse.broker import get_live_brokers, holdings
 from portfolio_pulse.ingest import news_rss, nse_rss
 from portfolio_pulse.jobs._common import deliver, tracked_symbol_names
 from portfolio_pulse.notify import telegram
@@ -17,15 +17,17 @@ from portfolio_pulse.store import get_store
 
 def run() -> dict:
     store = get_store()
-    kite = get_broker(store)  # Kite API or MCP client; may be None
+    brokers = get_live_brokers(store)  # [] when every session is expired
+    kite = brokers[0][1] if brokers else None  # any live client works for names
 
-    # Opportunistically refresh holdings while we have a live session.
+    # Opportunistically refresh holdings from every live broker.
     synced = 0
-    if kite is not None:
+    for name, client in brokers:
         try:
-            synced = holdings.sync(store, kite)
+            synced += holdings.sync(store, client, broker=name)
         except Exception:
-            synced = 0
+            pass
+    if kite is not None:
         # Backfill company names for watchlist stocks added without one (e.g.
         # /add by bare ticker while offline) — names drive filing matching.
         if hasattr(kite, "company_names"):

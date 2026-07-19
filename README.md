@@ -46,10 +46,16 @@ GitHub Actions (cron)                         Streamlit Cloud
                           Supabase (Postgres)  ◄──────────┘
         ▲ NSE RSS filings   ▲ Pulse/publisher news   ▲ yfinance + Kite quote
 ```
-- **Broker**: Zerodha's official **Kite MCP server** (`mcp.kite.trade`) — holdings
-  + price quotes with no API app/key; one "Login with Kite" tap authorises a
-  session (`python -m portfolio_pulse.jobs.mcp_sync`). Kite Connect API remains
-  an optional alternative. Read-only: order tools are never called.
+- **Brokers (connect one or several — holdings aggregate)**:
+  - **Zerodha** — official Kite MCP server (`mcp.kite.trade`); one "Login with
+    Kite" tap (`python -m portfolio_pulse.jobs.mcp_sync`, or /connect in Telegram)
+  - **Upstox** — official Upstox MCP server (`mcp.upstox.com`, OAuth);
+    one-time `python -m portfolio_pulse.jobs.upstox_connect`, then the cloud
+    auto-renews via refresh tokens
+  - Any other broker: add your stocks with `/add` — every feature except
+    auto-holdings-import works identically
+  - All connections are read-only; order tools are never called. Same stock at
+    two brokers shows combined quantity and weighted average price.
 - **Filings**: NSE official RSS (`nsearchives.nseindia.com/content/RSS/*.xml`).
 - **News**: Pulse by Zerodha + whitelisted publisher RSS.
 - **Prices**: yfinance `.NS` (primary) cross-checked against the Kite quote; a >1%

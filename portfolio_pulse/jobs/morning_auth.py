@@ -27,12 +27,14 @@ def run(force: bool = False) -> dict:
         return {"sent": False, "reason": "nudge disabled (PP_AUTH_NUDGE=off)"}
 
     store = get_store()
-    if kite_auth.token_is_fresh(store) and not force:
-        return {"sent": False, "reason": "API token already fresh"}
+    if not force:
+        from portfolio_pulse.broker import get_live_brokers
+
+        live = [name for name, _ in get_live_brokers(store)]
+        if live:
+            return {"sent": False, "reason": f"session(s) live: {', '.join(live)}"}
 
     mcp = KiteMCPClient(store)
-    if not force and mcp.session_id and mcp.logged_in():
-        return {"sent": False, "reason": "MCP session still live"}
 
     # Session expired -> send a login link for whichever path is configured.
     if config.KITE_API_KEY:
@@ -61,6 +63,13 @@ def run(force: bool = False) -> dict:
         f'<a href="{url}">Login with Kite</a>\n'
         "⏱ <b>This link dies in a few minutes.</b> Seeing it late? Just send "
         "/connect for a fresh one.\n"
+    )
+    from portfolio_pulse.broker.upstox_mcp import load_oauth
+
+    if load_oauth(store).get("client_id"):
+        msg += ("Upstox also needs a reconnect: run "
+                "<code>python -m portfolio_pulse.jobs.upstox_connect</code>\n")
+    msg += (
         "<i>Filings, news and DMA alerts continue even if you skip this — "
         "reconnecting only refreshes holdings & price double-checks.</i>"
     )
