@@ -14,9 +14,16 @@ On Cloud, st.secrets are mirrored into env BEFORE importing the app package
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
+
+# Streamlit Cloud launches this file from its own subfolder, so the repo root
+# (which holds the portfolio_pulse package) isn't importable without this.
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 # --- bridge Streamlit Cloud secrets -> environment (must precede pp imports) ---
 for _key in ("PP_STORE_BACKEND", "SUPABASE_URL", "SUPABASE_KEY",
