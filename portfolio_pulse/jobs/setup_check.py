@@ -105,4 +105,8 @@ def run() -> dict:
 
 
 if __name__ == "__main__":
-    run()
+    import sys
+
+    # Non-zero exit on failure so the workflow's later steps (the scheduler
+    # nudge commit) only run when the core checks passed.
+    sys.exit(0 if run().get("passed") else 1)

@@ -22,11 +22,12 @@ in YOUR accounts. Nobody else — including the maker of this tool — can see i
 4. Click each of **fast-poll**, **dma-scan**, and **morning-auth** in the left
    sidebar — if any shows a *"This workflow was disabled"* banner, click
    **Enable workflow** (no banner = already on).
-5. **Know this about the first day:** GitHub's scheduler can take a few hours
-   to notice a brand-new fork. To hurry it up, make any tiny edit in your fork
-   (open `README.md` → pencil icon → add a blank line → **Commit changes**) —
-   that reliably wakes it. Until then, the **Run workflow** button on
-   *fast-poll* processes everything on demand, any time.
+5. **About the first day:** GitHub starts a brand-new fork's automatic schedule
+   only after some activity. The setup-check in Step 5 handles this for you
+   automatically (when it passes, it makes a small "setup verified" commit that
+   wakes the scheduler). Expect automatic runs to begin within the following
+   hour; until then, the **Run workflow** button on *fast-poll* processes
+   everything on demand, any time.
 
 ## Step 2 — Create the memory (5 min)
 

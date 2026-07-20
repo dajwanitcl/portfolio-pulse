@@ -6,6 +6,9 @@ name: setup-check
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write   # lets the success step commit the scheduler-nudge marker
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -25,3 +28,18 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -m portfolio_pulse.jobs.setup_check
+      - name: Wake the scheduler (fresh forks' crons start after a commit)
+        # Runs only if the checks above passed. One marker commit reliably
+        # registers this fork's scheduled workflows with GitHub's cron.
+        run: |
+          if [ ! -f .setup-complete ]; then
+            date -u +"setup verified %Y-%m-%dT%H:%M:%SZ" > .setup-complete
+            git config user.name "portfolio-pulse-setup"
+            git config user.email "actions@users.noreply.github.com"
+            git add .setup-complete
+            git commit -m "Setup verified — activate scheduled workflows"
+            git push
+            echo "Scheduler nudge committed. Automatic runs begin shortly."
+          else
+            echo "Setup marker already present — nothing to do."
+          fi
