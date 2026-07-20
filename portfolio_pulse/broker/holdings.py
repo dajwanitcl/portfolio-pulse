@@ -118,6 +118,13 @@ def sync(store, kite, broker: str = "zerodha") -> int:
     import json as _json
 
     rows = fetch_holdings(kite)
+    if not rows:
+        # An empty holdings reply from a broker that previously had rows is far
+        # more likely an API hiccup than a fully liquidated account — keep the
+        # previous snapshot rather than wiping (and demoting) everything.
+        prev = store.get_meta(f"holdings:{broker}")
+        if prev and prev != "[]":
+            return 0
     syms = [r["symbol"] for r in rows]
 
     # Name enrichment: per-row company_name (Upstox) first, then search (Kite MCP).
@@ -172,3 +179,12 @@ def _write_aggregate(store) -> None:
                     "avg_price": (r["cost"] / r["qty"]) if r["qty"] else 0.0,
                     "last_price": r["last_price"]})
     store.sync_holdings(out)
+
+    # A stock sold everywhere (gone from every broker after settlement) demotes
+    # from 'holding' to 'watch': it leaves the P&L view but KEEPS all its
+    # alerts — selling a stock rarely means you stop caring about it. /remove
+    # drops it entirely if the user wants silence.
+    if merged:
+        for w in store.list_watch("holding"):
+            if w.symbol not in merged:
+                store.add_watch(w.symbol, w.name, kind="watch")
