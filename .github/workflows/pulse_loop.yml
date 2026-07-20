@@ -57,7 +57,7 @@ jobs:
               echo "Outside 08:00-24:00 IST (hour $H) — sleeping until morning restart."
               break   # no handover: the hourly cron revives the chain at ~07:37 IST
             fi
-            python -m portfolio_pulse.jobs.fast_poll || true
+            python -m portfolio_pulse.jobs.heartbeat || true
             ELAPSED=$(( $(date +%s) - START ))
             if [ "$ELAPSED" -gt 19800 ]; then   # ~5.5 h: hand over before the 6 h limit
               HANDOVER=1

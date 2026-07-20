@@ -27,6 +27,11 @@ def run(force: bool = False) -> dict:
         return {"sent": False, "reason": "nudge disabled (PP_AUTH_NUDGE=off)"}
 
     store = get_store()
+    # Once per day: heartbeat ticks + the backup cron must not re-nudge.
+    today = config.now_ist().date().isoformat()
+    if not force and store.get_meta("morning_auth_date") == today:
+        return {"sent": False, "reason": "already checked today"}
+    store.set_meta("morning_auth_date", today)
     if not force:
         from portfolio_pulse.broker import get_live_brokers
 

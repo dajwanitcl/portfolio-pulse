@@ -19,6 +19,12 @@ def run(force: bool = False) -> dict:
     store = get_store()
     if not force and not config.is_trading_day():
         return {"skipped": "not a trading day"}
+    # Once per day: the heartbeat calls this on every tick after 18:45 IST and
+    # the backup cron may fire too — the first caller wins, the rest no-op.
+    today = config.now_ist().date().isoformat()
+    if not force and store.get_meta("dma_scan_date") == today:
+        return {"skipped": "already ran today"}
+    store.set_meta("dma_scan_date", today)
 
     kite = get_broker(store)  # Kite API or MCP client; may be None
     counts = {"scanned": 0, "alerts": 0, "suspect_held": 0}

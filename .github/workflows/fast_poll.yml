@@ -29,7 +29,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Run fast poll
+      - name: Run heartbeat (poll + due daily jobs)
         env:
           PP_STORE_BACKEND: supabase
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -39,4 +39,4 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
           KITE_API_SECRET: ${{ secrets.KITE_API_SECRET }}
-        run: python -m portfolio_pulse.jobs.fast_poll
+        run: python -m portfolio_pulse.jobs.heartbeat
