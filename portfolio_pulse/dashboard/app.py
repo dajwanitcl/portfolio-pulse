@@ -478,7 +478,22 @@ def _watchlist_tab(store) -> None:
 
 
 def main() -> None:
-    store = _store()
+    try:
+        store = _store()
+        store.list_alerts(limit=1)  # connectivity probe — fail here, friendly
+    except Exception as exc:
+        st.markdown(_CSS, unsafe_allow_html=True)
+        st.title("📡 Portfolio Pulse")
+        st.error(
+            "**Can't reach the database.** This almost always means the "
+            "`SUPABASE_URL` or `SUPABASE_KEY` in this app's Secrets is wrong "
+            "or points to a deleted project.\n\n"
+            "**Fix:** Manage app (bottom right) → ⋮ → Settings → Secrets → "
+            "paste your current Supabase Project URL and service_role key "
+            "(Supabase dashboard → Project Settings) → Save."
+        )
+        st.caption(f"Technical detail: {type(exc).__name__}: {exc}")
+        st.stop()
     _handle_token_callback(store)
 
     st.markdown(_CSS, unsafe_allow_html=True)
