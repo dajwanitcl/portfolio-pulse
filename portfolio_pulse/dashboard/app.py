@@ -28,7 +28,7 @@ if _ROOT not in sys.path:
 # --- bridge Streamlit Cloud secrets -> environment (must precede pp imports) ---
 for _key in ("PP_STORE_BACKEND", "SUPABASE_URL", "SUPABASE_KEY",
              "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "ANTHROPIC_API_KEY",
-             "KITE_API_KEY", "KITE_API_SECRET"):
+             "KITE_API_KEY", "KITE_API_SECRET", "DASHBOARD_PASSWORD"):
     try:
         if _key in st.secrets and not os.environ.get(_key):
             os.environ[_key] = str(st.secrets[_key])
@@ -481,6 +481,21 @@ def _watchlist_tab(store) -> None:
 
 
 def main() -> None:
+    # Optional password gate: set DASHBOARD_PASSWORD in the app's secrets to
+    # keep a cloud-hosted dashboard private. Unset = open (fine for local use).
+    _pw = os.environ.get("DASHBOARD_PASSWORD", "")
+    if _pw and not st.session_state.get("pp_authed"):
+        st.markdown(_CSS, unsafe_allow_html=True)
+        st.title("📡 Portfolio Pulse")
+        entered = st.text_input("Password", type="password",
+                                placeholder="Enter dashboard password")
+        if entered == _pw:
+            st.session_state["pp_authed"] = True
+            st.rerun()
+        elif entered:
+            st.error("Wrong password.")
+        st.stop()
+
     try:
         store = _store()
         store.list_alerts(limit=1)  # connectivity probe — fail here, friendly
