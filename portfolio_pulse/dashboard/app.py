@@ -117,7 +117,10 @@ _RELATION = {
     "below_forming": ("🔵 Golden cross forming", "50-DMA closing in on 200-DMA from below", 1),
     "above": ("🟢 Above", "50-DMA above 200-DMA", 2),
     "below": ("🔴 Below", "50-DMA below 200-DMA (death cross in effect)", 3),
+    # scanned, but the stock hasn't traded the ~206 days a 200-DMA needs
     "unknown": ("⚪ Insufficient history", "needs ~200 trading days of data", 4),
+    # never scanned yet — the daily 18:45 IST scan hasn't seen this stock
+    "pending": ("⏳ Awaiting first scan", "populates at the 18:45 IST daily scan", 5),
 }
 
 
@@ -208,7 +211,7 @@ def _radar_rows(store) -> list[dict]:
     for w in store.list_watch():
         d = store.get_dma_state(w.symbol)
         if not d:
-            rows.append({"symbol": w.symbol, "relation": "unknown", "gap_pct": None,
+            rows.append({"symbol": w.symbol, "relation": "pending", "gap_pct": None,
                          "proj": None, "sma50": None, "sma200": None, "updated": "—",
                          "kind": w.kind})
             continue
