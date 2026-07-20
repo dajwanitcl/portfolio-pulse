@@ -30,8 +30,10 @@ for _key in ("PP_STORE_BACKEND", "SUPABASE_URL", "SUPABASE_KEY",
              "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "ANTHROPIC_API_KEY",
              "KITE_API_KEY", "KITE_API_SECRET", "DASHBOARD_PASSWORD"):
     try:
-        if _key in st.secrets and not os.environ.get(_key):
-            os.environ[_key] = str(st.secrets[_key])
+        if _key in st.secrets:
+            # Always re-sync (and strip stray whitespace from pastes) so edits
+            # to the app's Secrets take effect without a full process restart.
+            os.environ[_key] = str(st.secrets[_key]).strip()
     except Exception:
         pass  # no secrets.toml locally — env vars are used instead
 
@@ -489,9 +491,10 @@ def main() -> None:
         st.title("📡 Portfolio Pulse")
         entered = st.text_input("Password", type="password",
                                 placeholder="Enter dashboard password")
-        if entered == _pw:
-            st.session_state["pp_authed"] = True
-            st.rerun()
+        if entered.strip() == _pw.strip():
+            if entered:
+                st.session_state["pp_authed"] = True
+                st.rerun()
         elif entered:
             st.error("Wrong password.")
         st.stop()
