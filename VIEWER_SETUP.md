@@ -93,7 +93,35 @@ midnight IST. First alerts arrive whenever your companies next file something.
 - **Zerodha sessions expire every morning** (SEBI rule) — the bot automatically
   sends you a fresh login link. Even if you ignore it, all filing/news/cross
   alerts continue; only the holdings-sync pauses.
-- Optional upgrades (advanced, still free/cheap): a live dashboard
-  (share.streamlit.io, deploy `portfolio_pulse/dashboard/app.py` with the same
-  secrets), on-the-dot timing (cron-job.org pinger — see SETUP_GUIDE.md), and
-  AI summaries on each alert (an Anthropic API key as `ANTHROPIC_API_KEY`).
+- Optional upgrades (still free/cheap): the dashboard below, on-the-dot timing
+  (cron-job.org pinger — see SETUP_GUIDE.md), and AI summaries on each alert
+  (an Anthropic API key added as an `ANTHROPIC_API_KEY` secret).
+
+---
+
+## Optional — your dashboard (10 min, browser only)
+
+A dark "trading terminal" view of everything: Cross Radar (which stocks are
+close to a death/golden cross and how close), P&L per broker, per-stock event
+history, and the alert feed. Runs free in the cloud; open it from any device.
+
+1. Go to **share.streamlit.io** → **Continue with GitHub** (same account as
+   your fork) → authorize
+2. **Create app** → *Deploy a public app from GitHub* →
+   - Repository: your fork (`<your-username>/portfolio-pulse`)
+   - Branch: `main`
+   - Main file path: `portfolio_pulse/dashboard/app.py`
+3. Before deploying, open **Advanced settings → Secrets** and paste (with YOUR
+   two values — same ones you gave GitHub in Step 4):
+   ```toml
+   PP_STORE_BACKEND = "supabase"
+   SUPABASE_URL = "https://xxxx.supabase.co"
+   SUPABASE_KEY = "your service_role key"
+   ```
+4. **Deploy** → after ~2 minutes you get a permanent link like
+   `https://something.streamlit.app` — bookmark it on your phone.
+
+The dashboard only *reads* your database, so it always shows exactly what the
+alert engine knows. (Prefer running it on your own computer instead? See the
+`Start Dashboard` launchers in the repo — requires Python and a local `.env`;
+that's the tinkerer's path.)
