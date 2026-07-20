@@ -79,12 +79,15 @@ _HELP = (
 )
 
 
-def _resolve_stock(store, query: str) -> tuple[Optional[str], str]:
-    """Resolve free text ('tata motors', 'INFY') to (SYMBOL, company name).
+def _resolve_stock(store, query: str) -> tuple[Optional[str], str, bool]:
+    """Resolve free text ('tata motors', 'INFY') to (SYMBOL, name, verified).
 
     Order: exact symbol in the local instruments cache -> live MCP instrument
-    search (works while a broker session is up) -> bare-ticker fallback for
-    single-word queries. Returns (None, '') when nothing safe was found.
+    search (works while a broker session is up) -> yfinance lookup -> bare-
+    ticker fallback for single-word queries. `verified` is False only on that
+    last fallback — the symbol could not be confirmed to exist (dead tickers
+    like TATAMOTORS post-demerger land here), so callers should warn.
+    Returns (None, '', False) when nothing safe was found.
     """
     q = query.strip()
     up = q.upper()
@@ -93,7 +96,7 @@ def _resolve_stock(store, query: str) -> tuple[Optional[str], str]:
 
     cache = _load_instruments_cache(max_age_days=365) or {}
     if up in cache:
-        return up, cache[up]
+        return up, cache[up], True
 
     try:
         from portfolio_pulse.broker.kite_mcp import KiteMCPClient
@@ -123,7 +126,7 @@ def _resolve_stock(store, query: str) -> tuple[Optional[str], str]:
                 name = (best.get("name") or "").strip()
                 if name:
                     merge_names({sym: name})  # so NSE filings match immediately
-                return sym, name
+                return sym, name, True
     except Exception:
         pass  # search unavailable (no session / network) -> fall through
 
@@ -138,11 +141,12 @@ def _resolve_stock(store, query: str) -> tuple[Optional[str], str]:
             name = (info.get("longName") or info.get("shortName") or "").strip()
             if name:
                 merge_names({up: name})
-                return up, name
+                return up, name, True
         except Exception:
             pass
-        return up, ""  # ticker accepted; name backfills when a session is live
-    return None, ""
+        # Accepted but UNVERIFIED — could be a dead/renamed ticker.
+        return up, "", False
+    return None, "", False
 
 
 def _broker_connect_reply(store, which: str = "zerodha") -> str:
@@ -220,17 +224,23 @@ def handle_update(update: dict, store) -> Optional[str]:
     if cmd == "add":
         if not arg:
             return "Usage: /add NAME or SYMBOL (e.g. /add tata motors)"
-        sym, name = _resolve_stock(store, arg)
+        sym, name, verified = _resolve_stock(store, arg)
         if not sym:
             return (f"Couldn't identify '{arg}'. Try the exact NSE symbol "
-                    "(e.g. /add TATAMOTORS), or /connect the broker first so I "
+                    "(e.g. /add RELIANCE), or /connect the broker first so I "
                     "can search by company name.")
         existing = {w.symbol: w.kind for w in store.list_watch()}
         if existing.get(sym) == "holding":
             return f"{sym} is already tracked as a holding — no need to watchlist it."
         store.add_watch(sym, name, kind="watch")
         label = f"{sym} ({name})" if name else sym
-        return f"Added {label} to your watchlist."
+        reply = f"Added {label} to your watchlist."
+        if not verified:
+            reply += ("\n⚠️ I couldn't verify this symbol exists on NSE — if it's "
+                      "delisted or renamed (e.g. TATAMOTORS became TMPV/TMCV after "
+                      "the demerger), it will never produce data. Double-check the "
+                      "ticker; /remove it if it was a typo.")
+        return reply
     if cmd == "remove":
         if not arg:
             return "Usage: /remove SYMBOL"
