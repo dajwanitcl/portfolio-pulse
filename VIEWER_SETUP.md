@@ -19,6 +19,11 @@ in YOUR accounts. Nobody else — including the maker of this tool — can see i
    You now own a copy of the entire system.
 3. In YOUR fork, click the **Actions** tab → press the green
    **"I understand my workflows, go ahead and enable them"** button.
+4. **Important — GitHub switches off scheduled workflows on forks, one by one.**
+   Still in the Actions tab, click each of **fast-poll**, **dma-scan**, and
+   **morning-auth** in the left sidebar; if you see a *"This workflow was
+   disabled"* banner, click **Enable workflow**. (Skip any that don't show the
+   banner — they're already on. Without this, the system never runs on its own!)
 
 ## Step 2 — Create the memory (5 min)
 
@@ -76,6 +81,9 @@ midnight IST. First alerts arrive whenever your companies next file something.
 ### Good to know
 - **Replies take up to ~10–20 min** (the engine wakes on a schedule). Alerts
   are never lost, only batched.
+- **Getting updates later:** when this project improves, your fork shows a
+  "Sync fork" button on its main page — one click brings the new version in.
+  You never need to touch a terminal or any access token for this.
 - Send `/help` to your bot for all commands (`/list`, `/remove`, `/newlist`,
   `/holdings`, `/dma`…).
 - **Zerodha sessions expire every morning** (SEBI rule) — the bot automatically
