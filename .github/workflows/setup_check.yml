@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write   # lets the success step commit the scheduler-nudge marker
+  actions: write    # lets the success step start the pulse-loop immediately
 
 jobs:
   check:
@@ -43,3 +44,7 @@ jobs:
           else
             echo "Setup marker already present — nothing to do."
           fi
+      - name: Start the pulse-loop (instant ~10-min polling, no waiting)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pulse_loop.yml --repo "$GITHUB_REPOSITORY" || true

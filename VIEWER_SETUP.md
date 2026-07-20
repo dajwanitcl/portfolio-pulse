@@ -22,12 +22,11 @@ in YOUR accounts. Nobody else — including the maker of this tool — can see i
 4. Click each of **fast-poll**, **dma-scan**, and **morning-auth** in the left
    sidebar — if any shows a *"This workflow was disabled"* banner, click
    **Enable workflow** (no banner = already on).
-5. **About the first day:** GitHub starts a brand-new fork's automatic schedule
-   only after some activity. The setup-check in Step 5 handles this for you
-   automatically (when it passes, it makes a small "setup verified" commit that
-   wakes the scheduler). Expect automatic runs to begin within the following
-   hour; until then, the **Run workflow** button on *fast-poll* processes
-   everything on demand, any time.
+5. **About the first day:** when the setup-check in Step 5 passes, it starts
+   the automatic polling immediately (you'll see a run named **pulse-loop**
+   working in the Actions tab — that's normal, it's the engine idling between
+   polls). No waiting, nothing else to press. The **Run workflow** button on
+   *fast-poll* remains available for an instant on-demand poll any time.
 
 ## Step 2 — Create the memory (5 min)
 
@@ -83,8 +82,9 @@ midnight IST. First alerts arrive whenever your companies next file something.
 ---
 
 ### Good to know
-- **Replies take up to ~10–20 min** (the engine wakes on a schedule). Alerts
-  are never lost, only batched.
+- **The engine polls every ~10 minutes** (8 AM–midnight IST) — the setup-check
+  starts a self-sustaining loop that keeps this cadence automatically. Replies
+  and alerts arrive within one cycle; nothing is ever lost, only batched.
 - **Getting updates later:** when this project improves, your fork shows a
   "Sync fork" button on its main page — one click brings the new version in.
   You never need to touch a terminal or any access token for this.
