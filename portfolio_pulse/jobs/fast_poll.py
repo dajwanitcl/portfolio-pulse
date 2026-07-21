@@ -62,7 +62,15 @@ def run() -> dict:
         from portfolio_pulse.ingest.matching import mention_is_attributive
         from portfolio_pulse.summarize.source_text import fetch_filing_text
 
+        from portfolio_pulse import config as _cfg
+
         for item in nse_rss.poll(store, symbol_names):
+            # Routine paperwork (share-certificate notices, compliance reports,
+            # newspaper copies) is muted — recorded as seen, never alerted.
+            if _cfg.MUTE_ROUTINE and any(
+                    k in (item.subject or "").lower() for k in _cfg.NSE_ROUTINE_SUBJECTS):
+                counts["filings_muted"] = counts.get("filings_muted", 0) + 1
+                continue
             # Read the actual filing document so the summary can carry its
             # substance (order values, dividend amounts) — not just the blurb.
             doc = fetch_filing_text(item.link)
@@ -74,6 +82,7 @@ def run() -> dict:
                 title=f"{item.company}: {item.subject}" if item.subject else item.company,
                 source_text=body, source_url=item.link,
                 source_type=item.source_type, company=item.company,
+                category=item.category,
             )
             counts["filings"] += 1
 

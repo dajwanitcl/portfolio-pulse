@@ -150,6 +150,7 @@ def summarize(
     source_text: str,
     headline: str,
     company: str = "",
+    category: str = "",
     llm: Optional[Callable[..., dict]] = None,
 ) -> Summary:
     """Produce a source-grounded Summary. `llm` overrides the model call for tests.
@@ -167,10 +168,25 @@ def summarize(
     if len(source_text) < config.SUMMARY_MIN_SOURCE_CHARS:
         return _insufficient(headline or source_text)
 
-    # No API key configured and no injected model -> deliver the verbatim headline
-    # rather than attempting (and failing) a call. Still truthful, never fabricated.
+    # No API key configured and no injected model -> keyless extractive mode:
+    # verbatim top sentences + mechanical key figures + rule-based impact.
+    # Nothing generated, so nothing can be fabricated.
     if llm is None and not config.ANTHROPIC_API_KEY:
-        return _partial(headline or source_text[:120])
+        from portfolio_pulse.summarize.extractive import extract
+
+        got = extract(source_text, category)
+        if not got:
+            return _partial(headline or source_text[:120])
+        direction = got["impact_direction"]
+        note = {
+            "positive": "Potential impact: positive (rule-based reading — not advice)",
+            "negative": "Potential impact: negative (rule-based reading — not advice)",
+            "neutral": "Potential impact: neutral (rule-based reading — not advice)",
+            "unclear": "Potential impact: unclear from the text",
+        }[direction]
+        return Summary(text=got["summary"], impact_direction=direction,
+                       impact_note=note, confidence="medium",
+                       qc_status="EXTRACT")
 
     call = llm or _call_haiku
     try:

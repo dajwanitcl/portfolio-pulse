@@ -46,8 +46,9 @@ st.set_page_config(page_title="Portfolio Pulse", page_icon="📡", layout="wide"
 # Dark-surface status colors (status is never color-alone here: every badge and
 # QC label pairs the color with its text/icon).
 _QC_COLOR = {
-    "CONFIRMED": "#34C08B", "SINGLE-SOURCE": "#E2B93B", "PARTIAL": "#E2B93B",
-    "INSUFFICIENT": "#E2B93B", "SUSPECT": "#F87171", "NO-DATA": "#8B93A7",
+    "CONFIRMED": "#34C08B", "EXTRACT": "#2DD4BF", "SINGLE-SOURCE": "#E2B93B",
+    "PARTIAL": "#E2B93B", "INSUFFICIENT": "#E2B93B", "SUSPECT": "#F87171",
+    "NO-DATA": "#8B93A7",
 }
 
 _CSS = """

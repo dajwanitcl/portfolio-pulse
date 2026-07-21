@@ -78,6 +78,17 @@ NSE_RSS_FEEDS: dict[str, str] = {
     "insider_trading": f"{NSE_RSS_BASE}/Insider_Trading.xml",
 }
 
+# Routine paperwork filings that drown the signal — muted by default (still
+# recorded in seen_items so they never resurface). PP_MUTE_ROUTINE=off disables.
+NSE_ROUTINE_SUBJECTS: tuple = (
+    "certificate under", "compliance report", "compliances-reg",
+    "newspaper publication", "copy of newspaper", "trading window",
+    "loss of share certificate", "duplicate share", "share certificate",
+    "investor grievance", "reg. 74", "regulation 74", "book closure intimation",
+    "spdi", "registrar & share transfer", "issue of duplicate",
+)
+MUTE_ROUTINE = os.environ.get("PP_MUTE_ROUTINE", "on").lower() not in ("off", "0", "false")
+
 # A browser-like UA is polite and avoids naive bot filters on the archive host.
 HTTP_HEADERS = {
     "User-Agent": (

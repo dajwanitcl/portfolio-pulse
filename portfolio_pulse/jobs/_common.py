@@ -33,7 +33,7 @@ def tracked_symbol_names(store, kite) -> dict[str, str]:
 def deliver(store, *, symbol: str, alert_type: str, title: str,
             source_text: str, source_url: str, source_type: str,
             base_qc: str = "CONFIRMED", do_summarize: bool = True,
-            impact: str = "", company: str = "",
+            impact: str = "", company: str = "", category: str = "",
             require_relevance: bool = False):
     """Summarise (guarded), persist, and push one alert. Returns the Alert,
     or None when `require_relevance` is set and the model judged the item to be
@@ -49,7 +49,7 @@ def deliver(store, *, symbol: str, alert_type: str, title: str,
     """
     if do_summarize:
         summary = summarize(source_text=source_text, headline=title,
-                            company=company)
+                            company=company, category=category)
         if require_relevance and not summary.relevant:
             return None
         body, impact_note, qc = summary.text, summary.impact_note, \

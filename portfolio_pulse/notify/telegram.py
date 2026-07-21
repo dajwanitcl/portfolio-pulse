@@ -27,6 +27,7 @@ _OFFSET_KEY = "telegram_update_offset"
 
 _QC_BADGE = {
     "CONFIRMED": "✅ verified",
+    "EXTRACT": "📄 quoted from filing",
     "PARTIAL": "⚠️ headline only",
     "INSUFFICIENT": "⚠️ headline only",
     "SUSPECT": "⚠️ price unverified",
