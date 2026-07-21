@@ -68,6 +68,8 @@ def run(force: bool = False) -> dict:
         f'<a href="{url}">Login with Kite</a>\n'
         "⏱ <b>This link dies in a few minutes.</b> Seeing it late? Just send "
         "/connect for a fresh one.\n"
+        "After logging in you'll get a ✅ confirmation here within ~10 minutes — "
+        "<b>no ✅ means the login didn't take</b>; send /connect and try again.\n"
     )
     from portfolio_pulse.broker.upstox_mcp import load_oauth
 

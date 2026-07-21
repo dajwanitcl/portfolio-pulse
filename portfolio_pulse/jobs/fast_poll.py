@@ -27,6 +27,19 @@ def run() -> dict:
             synced += holdings.sync(store, client, broker=name)
         except Exception:
             pass
+
+    # Reconnection confirmation: a broker session appearing (after being absent)
+    # gets an explicit ✅ on Telegram — so a silently-failed login tap is
+    # distinguishable from a successful one by the absence of this message.
+    live_names = [n for n, _ in brokers]
+    prev = set(filter(None, (store.get_meta("live_brokers") or "").split(",")))
+    for n in live_names:
+        if n not in prev:
+            telegram.send_message(
+                f"✅ <b>{n.title()} connected</b> — holdings re-synced. "
+                "You're fully live again."
+            )
+    store.set_meta("live_brokers", ",".join(live_names))
     if kite is not None:
         # Backfill company names for watchlist stocks added without one (e.g.
         # /add by bare ticker while offline) — names drive filing matching.
@@ -42,7 +55,8 @@ def run() -> dict:
                 pass
 
     symbol_names = tracked_symbol_names(store, kite)
-    counts = {"synced_holdings": synced, "filings": 0, "news": 0, "commands": 0}
+    counts = {"synced_holdings": synced, "brokers": live_names,
+              "filings": 0, "news": 0, "commands": 0}
 
     if symbol_names:
         for item in nse_rss.poll(store, symbol_names):
