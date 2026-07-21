@@ -28,14 +28,26 @@ including the tool's author.
 
 Licensed under the [MIT License](LICENSE) — free to use, modify, and share.
 
+## Free by default — and smart without any AI key
+The stock summariser needs no paid services: it **downloads the actual filing
+document**, quotes the most information-dense sentences verbatim, extracts the
+key figures (₹ amounts, percentages, dates) mechanically, composes exact
+template summaries for corporate actions (dividends, bonuses, splits), and
+classifies impact with transparent keyword rules. Routine paperwork filings
+and company-quoted-as-analyst news are filtered out. Adding an
+`ANTHROPIC_API_KEY` secret is optional — it upgrades phrasing and judgment,
+never facts.
+
 ## The one rule: no fabricated facts
 Every alert is traceable to a primary source. The summariser only *compresses*
-text that was actually fetched — three code-level guardrails enforce this:
-1. **Thin-source gate** — too little text ⇒ headline + link only, no LLM call.
-2. **Numeric grounding** — any number in the summary must appear in the source,
-   else the summary is discarded and the verbatim headline is sent.
-3. **Source whitelist** — news is only accepted from trusted publishers; NSE
-   filings come straight from the exchange's official RSS feeds (no scraping).
+text that was actually fetched — guardrails enforce this:
+1. **Verbatim-first** — keyless summaries are quoted sentences; quoting can't
+   hallucinate by construction.
+2. **Thin-source gate** — too little text ⇒ headline + link only.
+3. **Numeric grounding** — an AI summary containing any number absent from the
+   source is discarded in favour of the verbatim headline.
+4. **Source whitelist** — news only from trusted publishers; NSE filings come
+   straight from the exchange's official RSS feeds (no scraping).
 
 ## Architecture
 ```

@@ -174,7 +174,13 @@ def summarize(
     if llm is None and not config.ANTHROPIC_API_KEY:
         from portfolio_pulse.summarize.extractive import extract
 
-        got = extract(source_text, category)
+        got = None
+        if "corporate action" in (category or "").lower():
+            from portfolio_pulse.summarize.templates import corporate_action_summary
+
+            got = corporate_action_summary(source_text)
+        if not got:
+            got = extract(source_text, category)
         if not got:
             return _partial(headline or source_text[:120])
         direction = got["impact_direction"]

@@ -48,10 +48,20 @@ _NEGATIVE = ("penalty", "warning letter", "show cause", "resignation",
              "insolvency", "fraud")
 
 
+_FORM_LABEL = re.compile(
+    r"^[A-Z][^;:0-9₹]{10,90}(?:, in brief)?[;:]\s+(?=[A-Z₹0-9])")
+
+
+def _clean(sentence: str) -> str:
+    """Strip leading disclosure-form labels ('Significant terms and conditions
+    of order(s)/contract(s) awarded, in brief;') so the quoted fact reads clean."""
+    return _FORM_LABEL.sub("", sentence).strip()
+
+
 def _sentences(text: str) -> list[str]:
     text = re.sub(r"\s+", " ", text or "").strip()
     raw = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9₹])", text)
-    return [s.strip() for s in raw if 40 <= len(s.strip()) <= 350]
+    return [_clean(s) for s in raw if 40 <= len(_clean(s.strip())) <= 350]
 
 
 def _score(sentence: str) -> int:
