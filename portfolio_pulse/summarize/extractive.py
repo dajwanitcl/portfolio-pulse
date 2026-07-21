@@ -60,8 +60,27 @@ def _clean(sentence: str) -> str:
 
 def _sentences(text: str) -> list[str]:
     text = re.sub(r"\s+", " ", text or "").strip()
-    raw = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9₹])", text)
+    # Don't split after common abbreviations ('Rs. 200 crore', 'Ref. No.', …).
+    raw = re.split(
+        r"(?<!Rs)(?<!No)(?<!Ref)(?<!Ltd)(?<!Pvt)(?<!Mr)(?<!Dr)(?<!Ms)(?<!vs)"
+        r"(?<=[.!?])\s+(?=[A-Z0-9₹])", text)
     return [_clean(s) for s in raw if 40 <= len(_clean(s.strip())) <= 350]
+
+
+def _chunks(text: str, size: int = 300) -> list[str]:
+    """Fallback units for tabular PDFs with no sentence punctuation: the text
+    hard-wrapped at word boundaries into quotable ~300-char windows."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    words, out, cur, ln = text.split(), [], [], 0
+    for w in words:
+        cur.append(w)
+        ln += len(w) + 1
+        if ln >= size:
+            out.append(" ".join(cur))
+            cur, ln = [], 0
+    if cur:
+        out.append(" ".join(cur))
+    return [c for c in out if len(c) >= 60]
 
 
 def _score(sentence: str) -> int:
@@ -111,6 +130,10 @@ def extract(text: str, category: str = "") -> Optional[dict]:
     """Best-effort verbatim summary. None when nothing scores above noise."""
     cands = [(s, _score(s)) for s in _sentences(text)]
     cands = [c for c in cands if c[1] >= 3]
+    if not cands:
+        # Tabular filings (no sentence punctuation) — quote the densest windows.
+        cands = [(c, _score(c)) for c in _chunks(text)]
+        cands = [c for c in cands if c[1] >= 4]
     if not cands:
         return None
     top = sorted(cands, key=lambda c: -c[1])[:2]
