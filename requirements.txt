@@ -10,4 +10,5 @@ python-telegram-bot>=21.0,<22 # Telegram push + bot commands
 anthropic>=0.40,<1            # Haiku summariser
 streamlit>=1.35,<2            # dashboard
 python-dotenv>=1.0,<2         # load .env in local/dev
+pypdf>=4.0,<7                 # read filing PDFs so summaries carry substance
 supabase>=2.0,<3              # prod store backend (Phase 8)

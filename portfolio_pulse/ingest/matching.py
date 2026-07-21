@@ -152,6 +152,38 @@ def match_symbol(item_company: str, symbol_names: dict[str, str]) -> str | None:
     return best
 
 
+_ANALYST_VERBS = (
+    "says|said|sees|expects|estimates|projects|initiates|maintains|retains|"
+    "reiterates|upgrades|downgrades|rates|recommends|sets|raises|cuts|hikes|"
+    "picks|prefers|suggests"
+)
+
+
+def mention_is_attributive(text: str, company_name: str) -> bool:
+    """True if the company appears only as the ANALYST/source, not the subject.
+
+    Kills the 'Nuvama maintains buy on XYZ' class of noise for holders of
+    Nuvama itself: brokerages get quoted constantly about OTHER stocks. Two
+    patterns mark a mention as attributive:
+      * company name immediately followed by an analyst verb or research-desk
+        suffix ('Nuvama says…', 'Nuvama Institutional Equities…')
+      * 'according to <company>' / 'brokerage <company>' / 'analysts at <company>'
+    Deliberately narrow: 'Nuvama reports Q1 profit' or 'Motilal sets target on
+    Nuvama' are NOT attributive — those are genuinely about the company.
+    """
+    toks = _tokens(company_name)
+    if not toks:
+        return False
+    name = re.escape(toks[0])
+    t = normalize_name(text)
+    if re.search(rf"\b{name}(\s+\w+)?\s+(institutional|research|securities|equities)\b", t):
+        return True
+    if re.search(rf"\b(according to|brokerage|brokerages like|analysts? at|"
+                 rf"research (?:house|firm))\s+{name}\b", t):
+        return True
+    return bool(re.search(rf"\b{name}\s+(?:{_ANALYST_VERBS})\b", t))
+
+
 def text_mentions_symbol(text: str, symbol: str, company_name: str) -> bool:
     """Loose match for news items: does free text mention the symbol or company?
 

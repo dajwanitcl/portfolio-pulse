@@ -59,22 +59,42 @@ def run() -> dict:
               "filings": 0, "news": 0, "commands": 0}
 
     if symbol_names:
+        from portfolio_pulse.ingest.matching import mention_is_attributive
+        from portfolio_pulse.summarize.source_text import fetch_filing_text
+
         for item in nse_rss.poll(store, symbol_names):
+            # Read the actual filing document so the summary can carry its
+            # substance (order values, dividend amounts) — not just the blurb.
+            doc = fetch_filing_text(item.link)
+            body = item.description
+            if doc:
+                body += "\n\nFILING DOCUMENT TEXT:\n" + doc
             deliver(
                 store, symbol=item.symbol, alert_type="filing",
                 title=f"{item.company}: {item.subject}" if item.subject else item.company,
-                source_text=item.description, source_url=item.link,
-                source_type=item.source_type,
+                source_text=body, source_url=item.link,
+                source_type=item.source_type, company=item.company,
             )
             counts["filings"] += 1
 
         for item in news_rss.poll(store, symbol_names):
-            deliver(
+            company = symbol_names.get(item.symbol, item.symbol)
+            blob = f"{item.title} {item.description}"
+            # Keyless noise gate: company quoted as analyst/brokerage on OTHER
+            # stocks ('Nuvama maintains buy on X') is not news about them.
+            if mention_is_attributive(blob, company):
+                counts["news_dropped"] = counts.get("news_dropped", 0) + 1
+                continue
+            sent = deliver(
                 store, symbol=item.symbol, alert_type="news",
                 title=item.title, source_text=item.description or item.title,
                 source_url=item.link, source_type=item.source_type,
+                company=company, require_relevance=True,
             )
-            counts["news"] += 1
+            if sent is None:
+                counts["news_dropped"] = counts.get("news_dropped", 0) + 1
+            else:
+                counts["news"] += 1
 
     counts["commands"] = telegram.drain_commands(store)
     return counts

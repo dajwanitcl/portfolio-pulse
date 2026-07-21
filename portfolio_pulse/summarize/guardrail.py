@@ -30,16 +30,22 @@ _NUM = re.compile(r"\d[\d,]*\.?\d*")
 
 _SYSTEM_PROMPT = (
     "You summarise Indian-market corporate exchange filings and news items for an "
-    "investor. You will be given ONLY the text of one item. Rules:\n"
+    "investor who holds the company named as COMPANY. You will be given ONLY the "
+    "text of one item. Rules:\n"
     "1. Summarise strictly and only what is explicitly stated in the provided text, "
-    "in at most two plain sentences.\n"
+    "in at most two plain sentences. Lead with the concrete substance — amounts, "
+    "counterparties, dates, percentages — when the text states them.\n"
     "2. Never add any fact, number, figure, date, name, or context that is not "
     "present in the provided text. Do not use outside knowledge.\n"
     "3. If the text is too short or has no substantive content to summarise, set "
     "insufficient=true.\n"
-    "4. Classify the likely near-term impact for shareholders based SOLELY on the "
-    "provided text: positive, negative, neutral, or unclear. This is a mechanical "
-    "reading of the text, not investment advice."
+    "4. Classify the likely near-term impact for shareholders of COMPANY based "
+    "SOLELY on the provided text: positive, negative, neutral, or unclear. This is "
+    "a mechanical reading of the text, not investment advice.\n"
+    "5. Set about_company=false if the text is NOT substantively about COMPANY "
+    "itself — e.g. COMPANY appears only as an analyst/brokerage giving views on "
+    "other stocks, as a quoted source, or in passing. When about_company is false "
+    "the other fields don't matter."
 )
 
 _TOOL = {
@@ -55,8 +61,14 @@ _TOOL = {
             },
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
             "insufficient": {"type": "boolean"},
+            "about_company": {
+                "type": "boolean",
+                "description": "false if COMPANY is only cited as analyst/source, "
+                               "not the subject of the item",
+            },
         },
-        "required": ["summary", "impact_direction", "confidence", "insufficient"],
+        "required": ["summary", "impact_direction", "confidence", "insufficient",
+                     "about_company"],
     },
 }
 
@@ -75,6 +87,7 @@ class Summary:
     impact_note: str           # hedged, human-readable
     confidence: str            # high | medium | low
     qc_status: str             # CONFIRMED | PARTIAL | INSUFFICIENT
+    relevant: bool = True      # False = item is about someone else (drop it)
 
 
 def _numbers(text: str) -> set[str]:
@@ -108,7 +121,7 @@ def _partial(headline: str) -> Summary:
     )
 
 
-def _call_haiku(source_text: str, headline: str) -> dict:
+def _call_haiku(source_text: str, headline: str, company: str = "") -> dict:
     """Call Claude Haiku with the extractive tool. Returns the tool input dict.
 
     Isolated so verification can inject a fake without an API key or network.
@@ -116,7 +129,8 @@ def _call_haiku(source_text: str, headline: str) -> dict:
     import anthropic
 
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-    user = f"HEADLINE: {headline}\n\nITEM TEXT:\n{source_text}"
+    user = (f"COMPANY: {company or 'unknown'}\nHEADLINE: {headline}\n\n"
+            f"ITEM TEXT:\n{source_text}")
     resp = client.messages.create(
         model=config.SUMMARY_MODEL,
         max_tokens=config.SUMMARY_MAX_TOKENS,
@@ -135,13 +149,16 @@ def _call_haiku(source_text: str, headline: str) -> dict:
 def summarize(
     source_text: str,
     headline: str,
-    llm: Optional[Callable[[str, str], dict]] = None,
+    company: str = "",
+    llm: Optional[Callable[..., dict]] = None,
 ) -> Summary:
     """Produce a source-grounded Summary. `llm` overrides the model call for tests.
 
-    Guardrail order: thin-source gate -> model call -> insufficient flag ->
-    numeric grounding. Any failure degrades gracefully to headline-only output;
-    the pipeline never emits a fabricated fact.
+    Guardrail order: thin-source gate -> model call -> relevance -> insufficient
+    flag -> numeric grounding. Any failure degrades gracefully to headline-only
+    output; the pipeline never emits a fabricated fact. When `company` is given,
+    the model also judges whether the item is substantively ABOUT that company
+    (Summary.relevant) — quoted-as-analyst mentions come back False.
     """
     source_text = (source_text or "").strip()
     headline = (headline or "").strip()
@@ -157,10 +174,18 @@ def summarize(
 
     call = llm or _call_haiku
     try:
-        out = call(source_text, headline)
+        try:
+            out = call(source_text, headline, company)
+        except TypeError:
+            out = call(source_text, headline)  # older two-arg test doubles
     except Exception:
         # On any model/transport error, degrade to the verbatim headline.
         return _partial(headline or source_text[:120])
+
+    if company and out.get("about_company") is False:
+        s = _partial(headline)
+        s.relevant = False
+        return s
 
     if out.get("insufficient"):
         return _insufficient(headline or source_text[:120])

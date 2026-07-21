@@ -33,8 +33,12 @@ def tracked_symbol_names(store, kite) -> dict[str, str]:
 def deliver(store, *, symbol: str, alert_type: str, title: str,
             source_text: str, source_url: str, source_type: str,
             base_qc: str = "CONFIRMED", do_summarize: bool = True,
-            impact: str = "") -> Alert:
-    """Summarise (guarded), persist, and push one alert. Returns the Alert.
+            impact: str = "", company: str = "",
+            require_relevance: bool = False):
+    """Summarise (guarded), persist, and push one alert. Returns the Alert,
+    or None when `require_relevance` is set and the model judged the item to be
+    about someone else (e.g. the company quoted as an analyst) — dropped, since
+    the feed item is already marked seen by the caller.
 
     `base_qc` lets callers pass a stricter status (e.g. SUSPECT from a price
     cross-check); the summariser's own status only downgrades, never upgrades it.
@@ -44,7 +48,10 @@ def deliver(store, *, symbol: str, alert_type: str, title: str,
     hallucinate — and `base_qc` stands as the status.
     """
     if do_summarize:
-        summary = summarize(source_text=source_text, headline=title)
+        summary = summarize(source_text=source_text, headline=title,
+                            company=company)
+        if require_relevance and not summary.relevant:
+            return None
         body, impact_note, qc = summary.text, summary.impact_note, \
             _worst_qc(base_qc, summary.qc_status)
     else:
