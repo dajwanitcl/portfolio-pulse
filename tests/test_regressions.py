@@ -251,3 +251,38 @@ class TestNewsMatching:
     def test_unrelated_text_rejected(self):
         assert not text_mentions_symbol("Tata Motors launches new EV", "TATAPOWER",
                                         "TATA POWER CO")
+
+
+class TestNoiseControls:
+    def test_analyst_meet_filings_muted(self):
+        from portfolio_pulse import config
+        for subject in ("Analyst/Investor Meet Para A-XBRL",
+                        "Analysts/Institutional Investor Meet/Con. Call Updates",
+                        "Intimation of Conference Call", "Audio Call Intimation"):
+            assert any(k in subject.lower() for k in config.NSE_ROUTINE_SUBJECTS), subject
+        for subject in ("Bagging/Receiving of orders/contracts", "Financial Results",
+                        "Outcome of Board Meeting", "Dividend"):
+            assert not any(k in subject.lower()
+                           for k in config.NSE_ROUTINE_SUBJECTS), subject
+
+    def test_pdf_xbrl_twin_deduped(self, tmp_path):
+        # The AAVAS incident: same event alerted twice via PDF + XBRL twins
+        from datetime import datetime, timezone
+        from portfolio_pulse.jobs._common import recently_alerted
+        from portfolio_pulse.store.db import Alert, SQLiteStore
+        store = SQLiteStore(str(tmp_path / "d.db"))
+        store.record_alert(Alert(
+            None, "RATNAVEER", "filing",
+            "Ratnaveer Precision Engineering Limited: Board Meeting Intimation "
+            "|Meeting Date: 24-Jul-2026", "", "", "", "Exchange Filing", "PARTIAL",
+            datetime.now(timezone.utc).isoformat(), True))
+        assert recently_alerted(
+            store, "RATNAVEER",
+            "Ratnaveer Precision Engineering Limited: Board Meeting Intimation")
+        # a genuinely different filing must NOT be suppressed
+        assert not recently_alerted(
+            store, "RATNAVEER",
+            "Ratnaveer Precision Engineering Limited: Resignation of CFO")
+        # and a different symbol is never affected
+        assert not recently_alerted(
+            store, "AAVAS", "Aavas Financiers Limited: Board Meeting Intimation")

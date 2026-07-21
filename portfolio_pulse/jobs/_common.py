@@ -68,6 +68,54 @@ def deliver(store, *, symbol: str, alert_type: str, title: str,
     return alert
 
 
+def _title_tokens(title: str) -> set[str]:
+    import re
+
+    stop = {"limited", "ltd", "the", "of", "and", "for", "to", "on", "xbrl",
+            "para", "a", "updates", "intimation", "under", "regarding", "reg"}
+    toks = set()
+    for t in re.findall(r"[a-z0-9]+", (title or "").lower()):
+        t = t.rstrip("s") if len(t) > 3 else t   # analysts ~ analyst
+        if t not in stop and len(t) > 1:
+            toks.add(t)
+    return toks
+
+
+def recently_alerted(store, symbol: str, title: str, hours: float = 6.0) -> bool:
+    """True if a near-identical filing alert already went out for this symbol.
+
+    NSE publishes most events twice (a PDF and an XBRL twin with different
+    GUIDs) minutes apart — one event must mean one alert. Two titles are 'the
+    same event' when their significant tokens overlap almost entirely within
+    the time window.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    def subject_of(t: str) -> str:
+        # 'Company Name: Subject' -> compare subjects only; otherwise the
+        # company tokens make ANY two same-company filings look like twins.
+        return t.split(": ", 1)[-1]
+
+    mine = _title_tokens(subject_of(title))
+    if not mine:
+        return False
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    for a in store.list_alerts(limit=10, symbol=symbol):
+        try:
+            ts = datetime.fromisoformat(a.created_at.replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if ts < cutoff or a.alert_type != "filing":
+            continue
+        theirs = _title_tokens(subject_of(a.title))
+        overlap = mine & theirs
+        if len(overlap) >= 2 and len(overlap) / max(1, min(len(mine), len(theirs))) >= 0.6:
+            return True
+    return False
+
+
 # Lower rank = more trustworthy; the delivered alert takes the least-trusted of
 # the price-check status and the summariser status.
 _QC_RANK = {"CONFIRMED": 0, "SINGLE-SOURCE": 1, "PARTIAL": 2,

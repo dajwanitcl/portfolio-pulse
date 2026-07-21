@@ -86,6 +86,10 @@ NSE_ROUTINE_SUBJECTS: tuple = (
     "loss of share certificate", "duplicate share", "share certificate",
     "investor grievance", "reg. 74", "regulation 74", "book closure intimation",
     "spdi", "registrar & share transfer", "issue of duplicate",
+    # analyst-meet chatter: scheduling notices with no investor substance
+    "analyst", "investor meet", "institutional investor meet",
+    "conference call", "con. call", "audio call", "earnings call",
+    "investor presentation intimation",
 )
 MUTE_ROUTINE = os.environ.get("PP_MUTE_ROUTINE", "on").lower() not in ("off", "0", "false")
 

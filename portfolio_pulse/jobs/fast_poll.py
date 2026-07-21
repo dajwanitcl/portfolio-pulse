@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from portfolio_pulse.broker import get_live_brokers, holdings
 from portfolio_pulse.ingest import news_rss, nse_rss
-from portfolio_pulse.jobs._common import deliver, tracked_symbol_names
+from portfolio_pulse.jobs._common import (deliver, recently_alerted,
+                                          tracked_symbol_names)
 from portfolio_pulse.notify import telegram
 from portfolio_pulse.store import get_store
 
@@ -71,6 +72,14 @@ def run() -> dict:
                     k in (item.subject or "").lower() for k in _cfg.NSE_ROUTINE_SUBJECTS):
                 counts["filings_muted"] = counts.get("filings_muted", 0) + 1
                 continue
+            # One event = one alert: NSE files a PDF + XBRL twin of most events
+            # minutes apart; suppress the twin. (Order wins are exempt — two
+            # genuine orders in a day must both alert.)
+            title = f"{item.company}: {item.subject}" if item.subject else item.company
+            if item.category != "Order/Contract Win" and \
+                    recently_alerted(store, item.symbol, title):
+                counts["filings_deduped"] = counts.get("filings_deduped", 0) + 1
+                continue
             # Read the actual filing document so the summary can carry its
             # substance (order values, dividend amounts) — not just the blurb.
             doc = fetch_filing_text(item.link)
@@ -78,8 +87,7 @@ def run() -> dict:
             if doc:
                 body += "\n\nFILING DOCUMENT TEXT:\n" + doc
             deliver(
-                store, symbol=item.symbol, alert_type="filing",
-                title=f"{item.company}: {item.subject}" if item.subject else item.company,
+                store, symbol=item.symbol, alert_type="filing", title=title,
                 source_text=body, source_url=item.link,
                 source_type=item.source_type, company=item.company,
                 category=item.category,
