@@ -61,9 +61,10 @@ def _clean(sentence: str) -> str:
 def _sentences(text: str) -> list[str]:
     text = re.sub(r"\s+", " ", text or "").strip()
     # Don't split after common abbreviations ('Rs. 200 crore', 'Ref. No.', …).
+    # The lookbehinds must include the dot — they assert at the position AFTER it.
     raw = re.split(
-        r"(?<!Rs)(?<!No)(?<!Ref)(?<!Ltd)(?<!Pvt)(?<!Mr)(?<!Dr)(?<!Ms)(?<!vs)"
-        r"(?<=[.!?])\s+(?=[A-Z0-9₹])", text)
+        r"(?<!Rs\.)(?<!No\.)(?<!Ref\.)(?<!Ltd\.)(?<!Pvt\.)(?<!Mr\.)(?<!Dr\.)"
+        r"(?<!Ms\.)(?<!vs\.)(?<=[.!?])\s+(?=[A-Z0-9₹])", text)
     return [_clean(s) for s in raw if 40 <= len(_clean(s.strip())) <= 350]
 
 

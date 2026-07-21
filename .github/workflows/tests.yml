@@ -1,0 +1,23 @@
+name: tests
+
+# The regression gate: every bug this system has ever had lives on as a test.
+# Runs on every push and pull request — if any old failure resurfaces, the
+# change is flagged before it can reach any user's alerts.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - run: pytest tests/ -q
