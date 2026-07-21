@@ -58,16 +58,19 @@ GitHub Actions (cron)                         Streamlit Cloud
                           Supabase (Postgres)  ◄──────────┘
         ▲ NSE RSS filings   ▲ Pulse/publisher news   ▲ yfinance + Kite quote
 ```
-- **Brokers (connect one or several — holdings aggregate)**:
-  - **Zerodha** — official Kite MCP server (`mcp.kite.trade`); one "Login with
-    Kite" tap (`python -m portfolio_pulse.jobs.mcp_sync`, or /connect in Telegram)
-  - **Upstox** — official Upstox MCP server (`mcp.upstox.com`, OAuth);
-    one-time `python -m portfolio_pulse.jobs.upstox_connect`, then the cloud
-    auto-renews via refresh tokens
-  - Any other broker: add your stocks with `/add` — every feature except
-    auto-holdings-import works identically
-  - All connections are read-only; order tools are never called. Same stock at
-    two brokers shows combined quantity and weighted average price.
+- **Brokers (connect one or several)** — all via each broker's OFFICIAL MCP server:
+  - **Zerodha** — `/connect` in Telegram → tap the Login-with-Kite link
+  - **Upstox** — one-time `python -m portfolio_pulse.jobs.upstox_connect`
+    (OAuth; the cloud auto-renews via refresh tokens)
+  - **Dhan / Groww** — one-time
+    `python -m portfolio_pulse.jobs.broker_connect dhan` (or `groww`) —
+    endpoints discovered live from each broker's own OAuth metadata
+  - **Fyers** — `python -m portfolio_pulse.jobs.broker_connect fyers`
+    (login-link flow, like Zerodha)
+  - Any other broker (e.g. Angel One, ICICI): add your stocks with `/add` —
+    every feature except auto-holdings-import works identically
+  - All connections are read-only; order tools are never called. Holdings are
+    tracked per broker.
 - **Filings**: NSE official RSS (`nsearchives.nseindia.com/content/RSS/*.xml`).
 - **News**: Pulse by Zerodha + whitelisted publisher RSS.
 - **Prices**: yfinance `.NS` (primary) cross-checked against the Kite quote; a >1%

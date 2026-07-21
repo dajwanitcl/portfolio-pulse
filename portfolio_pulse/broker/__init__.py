@@ -32,6 +32,25 @@ def get_live_brokers(store) -> list[tuple[str, object]]:
         if upstox.connected():
             live.append(("upstox", upstox))
 
+    from portfolio_pulse.broker.mcp_oauth import OAuthMCPClient
+
+    for name in ("dhan", "groww"):
+        try:
+            client = OAuthMCPClient(store, name)
+            if client.load_oauth().get("access_token") and client.connected():
+                live.append((name, client))
+        except Exception:
+            continue
+
+    try:
+        from portfolio_pulse.broker.fyers_mcp import FyersMCPClient
+
+        fyers = FyersMCPClient(store)
+        if fyers.session_id and fyers.logged_in():
+            live.append(("fyers", fyers))
+    except Exception:
+        pass
+
     return live
 
 

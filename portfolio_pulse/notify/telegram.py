@@ -75,7 +75,7 @@ _HELP = (
     "/newlist — start a fresh, empty watchlist (holdings untouched)\n"
     "/list — show watchlist + holdings\n"
     "/holdings — show current holdings snapshot\n"
-    "/connect [zerodha|upstox] — connect/reconnect a broker (MCP)\n"
+    "/connect [zerodha|upstox|dhan|groww|fyers] — connect a broker (MCP)\n"
     "/sync — refresh holdings from every connected broker"
 )
 
@@ -167,6 +167,15 @@ def _broker_connect_reply(store, which: str = "zerodha") -> str:
             "cloud renews the session by itself whenever Upstox allows."
         )
 
+    if which in ("dhan", "groww", "fyers"):
+        return (
+            f"🔐 <b>Connect {which.title()}</b> (read-only, official {which.title()} "
+            "MCP):\nRun this once on your computer:\n"
+            f"<code>python -m portfolio_pulse.jobs.broker_connect {which}</code>\n"
+            "It opens the broker login in your browser, then syncs your holdings "
+            "automatically."
+        )
+
     from portfolio_pulse.broker.kite_mcp import KiteMCPClient, MCPError
 
     mcp = KiteMCPClient(store)
@@ -183,7 +192,7 @@ def _broker_connect_reply(store, which: str = "zerodha") -> str:
         f'<a href="{url}">Login with Kite</a>\n'
         "⏱ The link expires in a few minutes — tap it right away, "
         "then send /sync to pull your holdings.\n"
-        "<i>Also have Upstox? Send /connect upstox</i>"
+        "<i>Other brokers: /connect upstox · dhan · groww · fyers</i>"
     )
 
 

@@ -144,7 +144,7 @@ def sync(store, kite, broker: str = "zerodha") -> int:
     return len(rows)
 
 
-_KNOWN_BROKERS = ("zerodha", "upstox")
+_KNOWN_BROKERS = ("zerodha", "upstox", "dhan", "groww", "fyers")
 
 
 def _write_aggregate(store) -> None:
