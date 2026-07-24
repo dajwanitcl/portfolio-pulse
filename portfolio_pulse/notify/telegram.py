@@ -150,30 +150,96 @@ def _resolve_stock(store, query: str) -> tuple[Optional[str], str, bool]:
     return None, "", False
 
 
+def _phone_oauth_link(store, broker: str) -> Optional[str]:
+    """Mint a tap-on-phone OAuth login link, using the hosted dashboard as the
+    redirect target. Returns None when no dashboard URL is configured (the
+    local-script fallback applies) or when anything in the flow fails."""
+    from portfolio_pulse import config
+
+    if not config.DASHBOARD_URL:
+        return None
+    try:
+        import base64
+        import hashlib
+        import json as _json
+        import secrets
+        import time
+        import urllib.parse
+
+        import requests
+
+        from portfolio_pulse.broker.mcp_oauth import BROKER_MCP_URLS, discover
+        from portfolio_pulse.broker.upstox_mcp import MCP_ENDPOINT as _UPSTOX_URL
+
+        mcp_url = _UPSTOX_URL if broker == "upstox" else BROKER_MCP_URLS[broker]
+        ep = discover(mcp_url)
+        if not ep.get("register"):
+            return None
+        redirect = config.DASHBOARD_URL + "/"
+        reg = requests.post(ep["register"], json={
+            "client_name": "Portfolio Pulse",
+            "redirect_uris": [redirect],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        }, timeout=20)
+        if reg.status_code >= 400:
+            return None
+        client_id = reg.json()["client_id"]
+        verifier = base64.urlsafe_b64encode(
+            secrets.token_bytes(48)).rstrip(b"=").decode()
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        store.set_meta(f"{broker}_oauth_pending", _json.dumps({
+            "client_id": client_id, "verifier": verifier,
+            "token_endpoint": ep["token"], "redirect_uri": redirect,
+            "ts": time.time(),
+        }))
+        return ep["authorize"] + "?" + urllib.parse.urlencode({
+            "response_type": "code", "client_id": client_id,
+            "redirect_uri": redirect,
+            "state": f"{broker}:{secrets.token_urlsafe(8)}",
+            "code_challenge": challenge, "code_challenge_method": "S256",
+        })
+    except Exception:
+        return None
+
+
 def _broker_connect_reply(store, which: str = "zerodha") -> str:
     """Connect/reconnect instructions per broker. Used by /connect [broker]."""
     which = (which or "zerodha").strip().lower()
 
-    if which in ("upstox", "u"):
-        from portfolio_pulse.broker.upstox_mcp import UpstoxMCPClient, load_oauth
+    if which in ("upstox", "u", "dhan", "groww"):
+        broker = "upstox" if which == "u" else which
+        if broker == "upstox":
+            from portfolio_pulse.broker.upstox_mcp import UpstoxMCPClient, load_oauth
 
-        if load_oauth(store).get("access_token") and UpstoxMCPClient(store).connected():
-            return "Upstox already connected. Send /sync to refresh holdings."
+            if (load_oauth(store).get("access_token")
+                    and UpstoxMCPClient(store).connected()):
+                return "Upstox already connected. Send /sync to refresh holdings."
+        link = _phone_oauth_link(store, broker)
+        if link:
+            return (
+                f"🔐 <b>Connect {broker.title()}</b> (read-only, official MCP):\n"
+                f'<a href="{link}">Login with {broker.title()}</a>\n'
+                "⏱ Tap right away and log in — you'll land on your dashboard "
+                "with a confirmation, and a ✅ arrives here within ~10 minutes."
+            )
         return (
-            "🔐 <b>Connect Upstox</b> (read-only, official Upstox MCP):\n"
-            "Upstox uses a browser OAuth flow, so run this once on your computer:\n"
-            "<code>python -m portfolio_pulse.jobs.upstox_connect</code>\n"
-            "It opens the Upstox login, then syncs automatically. After that the "
-            "cloud renews the session by itself whenever Upstox allows."
+            f"🔐 <b>Connect {broker.title()}</b> (read-only, official MCP):\n"
+            "Run this once on your computer:\n"
+            f"<code>python -m portfolio_pulse.jobs."
+            f"{'upstox_connect' if broker == 'upstox' else 'broker_connect ' + broker}"
+            "</code>\nIt opens the broker login, then syncs automatically. "
+            "(Tip: deploy the dashboard to get tap-on-phone connects instead.)"
         )
 
-    if which in ("dhan", "groww", "fyers"):
+    if which == "fyers":
         return (
-            f"🔐 <b>Connect {which.title()}</b> (read-only, official {which.title()} "
-            "MCP):\nRun this once on your computer:\n"
-            f"<code>python -m portfolio_pulse.jobs.broker_connect {which}</code>\n"
-            "It opens the broker login in your browser, then syncs your holdings "
-            "automatically."
+            "🔐 <b>Connect Fyers</b> (read-only, official Fyers MCP):\n"
+            "Run this once on your computer:\n"
+            "<code>python -m portfolio_pulse.jobs.broker_connect fyers</code>\n"
+            "It opens the Fyers login, then syncs your holdings automatically."
         )
 
     from portfolio_pulse.broker.kite_mcp import KiteMCPClient, MCPError

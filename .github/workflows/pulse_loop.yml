@@ -36,6 +36,7 @@ jobs:
       - name: Poll every ~10 min, then hand over to a fresh run
         env:
           PP_STORE_BACKEND: supabase
+          PP_DASHBOARD_URL: ${{ vars.PP_DASHBOARD_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

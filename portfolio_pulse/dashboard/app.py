@@ -483,7 +483,66 @@ def _watchlist_tab(store) -> None:
             st.rerun()
 
 
+def _handle_broker_oauth_callback() -> None:
+    """Finish a phone-initiated broker OAuth login (Upstox/Dhan/Groww).
+
+    The Telegram /connect link sends the user through the broker's login with
+    THIS page as the redirect target; we exchange the returned code using the
+    PKCE verifier the bot parked in the store. Runs before the password gate so
+    the connect flow never stalls on it.
+    """
+    import json as _json
+
+    import requests as _rq
+
+    code = st.query_params.get("code")
+    state = st.query_params.get("state", "")
+    if not code or ":" not in str(state):
+        return
+    broker = str(state).split(":", 1)[0]
+    if broker not in ("upstox", "dhan", "groww"):
+        return
+    st.markdown(_CSS, unsafe_allow_html=True)
+    st.title("📡 Portfolio Pulse")
+    try:
+        store = get_store()
+        pending = _json.loads(store.get_meta(f"{broker}_oauth_pending") or "{}")
+        if not pending.get("client_id"):
+            st.error("This login link has expired — send /connect again in Telegram.")
+            st.stop()
+        resp = _rq.post(pending["token_endpoint"], data={
+            "grant_type": "authorization_code", "code": str(code),
+            "redirect_uri": pending["redirect_uri"],
+            "client_id": pending["client_id"],
+            "code_verifier": pending["verifier"],
+        }, timeout=20)
+        if resp.status_code >= 400:
+            st.error(f"{broker.title()} rejected the login exchange "
+                     f"({resp.status_code}). Send /connect again for a fresh link.")
+            st.stop()
+        tok = resp.json()
+        import time as _time
+
+        store.set_meta(f"{broker}_oauth", _json.dumps({
+            "client_id": pending["client_id"],
+            "token_endpoint": pending["token_endpoint"],
+            "access_token": tok.get("access_token", ""),
+            "refresh_token": tok.get("refresh_token", ""),
+            "expires_at": _time.time() + float(tok.get("expires_in", 3600)),
+        }))
+        store.set_meta(f"{broker}_oauth_pending", "")
+        st.success(f"✅ {broker.title()} connected! Your holdings sync within "
+                   "the next 10-minute cycle — a confirmation will arrive on "
+                   "Telegram. You can close this tab.")
+    except Exception as exc:
+        st.error(f"Connection failed: {type(exc).__name__}: {exc}")
+    finally:
+        st.query_params.clear()
+    st.stop()
+
+
 def main() -> None:
+    _handle_broker_oauth_callback()
     # Optional password gate: set DASHBOARD_PASSWORD in the app's secrets to
     # keep a cloud-hosted dashboard private. Unset = open (fine for local use).
     _pw = os.environ.get("DASHBOARD_PASSWORD", "")

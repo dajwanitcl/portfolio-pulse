@@ -179,6 +179,11 @@ AUTH_NUDGE = os.environ.get("PP_AUTH_NUDGE", "on").lower() not in ("off", "0", "
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 KITE_API_KEY = os.environ.get("KITE_API_KEY", "")
 KITE_API_SECRET = os.environ.get("KITE_API_SECRET", "")
+# The system's own hosted dashboard URL (Streamlit Cloud). When set, OAuth
+# brokers (Upstox/Dhan/Groww) become tap-a-link connects from Telegram: the
+# dashboard page catches the login redirect — no local script needed.
+DASHBOARD_URL = os.environ.get("PP_DASHBOARD_URL", "").strip().rstrip("/")
+
 # Official hosted broker MCP servers — broker access with no API app/key.
 # The Kite Connect API (above) is optional; MCP is the default connection path.
 KITE_MCP_URL = os.environ.get("KITE_MCP_URL", "https://mcp.kite.trade/mcp")
