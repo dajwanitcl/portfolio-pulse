@@ -33,6 +33,24 @@ jobs:
         # Runs only if the checks above passed. One marker commit reliably
         # registers this fork's scheduled workflows with GitHub's cron.
         run: |
+         echo "::add-mask::$SUPABASE_URL"
+          echo "::add-mask::$SUPABASE_KEY"
+
+          echo "SUPABASE_URL present: $([[ -n "$SUPABASE_URL" ]] && echo yes || echo no)"
+          echo "SUPABASE_KEY present: $([[ -n "$SUPABASE_KEY" ]] && echo yes || echo no)"
+
+          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
+          echo "SUPABASE_KEY length: ${#SUPABASE_KEY}"
+
+          echo "SUPABASE_URL has https:// prefix: $([[ "$SUPABASE_URL" == https://* ]] && echo yes || echo no)"
+          echo "SUPABASE_URL ends with .supabase.co: $([[ "$SUPABASE_URL" == *.supabase.co ]] && echo yes || echo no)"
+          echo "SUPABASE_URL has trailing slash: $([[ "$SUPABASE_URL" == */ ]] && echo yes || echo no)"
+
+          echo -n "SUPABASE_URL sha256[0:12]: "
+          printf "%s" "$SUPABASE_URL" | sha256sum | cut -c1-12
+          echo -n "SUPABASE_KEY sha256[0:12]: "
+          printf "%s" "$SUPABASE_KEY" | sha256sum | cut -c1-12
+          
           if [ ! -f .setup-complete ]; then
             date -u +"setup verified %Y-%m-%dT%H:%M:%SZ" > .setup-complete
             git config user.name "portfolio-pulse-setup"
