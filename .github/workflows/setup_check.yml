@@ -21,6 +21,21 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
+       - name: Debug Supabase inputs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "::add-mask::$SUPABASE_URL"
+          echo "::add-mask::$SUPABASE_KEY"
+          echo "SUPABASE_URL present: $([[ -n "$SUPABASE_URL" ]] && echo yes || echo no)"
+          echo "SUPABASE_KEY present: $([[ -n "$SUPABASE_KEY" ]] && echo yes || echo no)"
+          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
+          echo "SUPABASE_KEY length: ${#SUPABASE_KEY}"
+          echo "SUPABASE_URL has https:// prefix: $([[ "$SUPABASE_URL" == https://* ]] && echo yes || echo no)"
+          echo "SUPABASE_URL ends with .supabase.co: $([[ "$SUPABASE_URL" == *.supabase.co ]] && echo yes || echo no)"
+          echo "SUPABASE_URL has trailing slash: $([[ "$SUPABASE_URL" == */ ]] && echo yes || echo no)"
+
       - name: Run setup check
         env:
           PP_STORE_BACKEND: supabase
