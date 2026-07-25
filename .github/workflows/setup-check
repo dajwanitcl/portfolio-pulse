@@ -1,40 +1,72 @@
 name: setup-check
 
-# The "did I do it right?" button. Run manually from the Actions tab after
-# adding your secrets — it tests every piece and messages your Telegram bot
-# on success.
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # lets the success step commit the scheduler-nudge marker
-  actions: write    # lets the success step start the pulse-loop immediately
+  contents: write
+  actions: write
 
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -r requirements.txt
-       - name: Debug Supabase inputs
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Debug Supabase inputs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          echo "::add-mask::$SUPABASE_URL"
+          echo "::add-mask::$SUPABASE_KEY"
+          echo "::add-mask::$TELEGRAM_BOT_TOKEN"
+          echo "::add-mask::$TELEGRAM_CHAT_ID"
+
+          echo "SUPABASE_URL present: $([[ -n "$SUPABASE_URL" ]] && echo yes || echo no)"
+          echo "SUPABASE_KEY present: $([[ -n "$SUPABASE_KEY" ]] && echo yes || echo no)"
+          echo "TELEGRAM_BOT_TOKEN present: $([[ -n "$TELEGRAM_BOT_TOKEN" ]] && echo yes || echo no)"
+          echo "TELEGRAM_CHAT_ID present: $([[ -n "$TELEGRAM_CHAT_ID" ]] && echo yes || echo no)"
+
+          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
+          echo "SUPABASE_KEY length: ${#SUPABASE_KEY}"
+          echo "TELEGRAM_BOT_TOKEN length: ${#TELEGRAM_BOT_TOKEN}"
+          echo "TELEGRAM_CHAT_ID length: ${#TELEGRAM_CHAT_ID}"
+
+          echo "SUPABASE_URL has https:// prefix: $([[ "$SUPABASE_URL" == https://* ]] && echo yes || echo no)"
+          echo "SUPABASE_URL ends with .supabase.co: $([[ "$SUPABASE_URL" == *.supabase.co ]] && echo yes || echo no)"
+          echo "SUPABASE_URL has trailing slash: $([[ "$SUPABASE_URL" == */ ]] && echo yes || echo no)"
+
+          echo -n "SUPABASE_URL sha256[0:12]: "
+          printf "%s" "$SUPABASE_URL" | sha256sum | cut -c1-12
+
+          echo -n "SUPABASE_KEY sha256[0:12]: "
+          printf "%s" "$SUPABASE_KEY" | sha256sum | cut -c1-12
+
+      - name: Debug env seen by Python
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "::add-mask::$SUPABASE_URL"
-          echo "::add-mask::$SUPABASE_KEY"
-          echo "SUPABASE_URL present: $([[ -n "$SUPABASE_URL" ]] && echo yes || echo no)"
-          echo "SUPABASE_KEY present: $([[ -n "$SUPABASE_KEY" ]] && echo yes || echo no)"
-          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
-          echo "SUPABASE_KEY length: ${#SUPABASE_KEY}"
-          echo "SUPABASE_URL has https:// prefix: $([[ "$SUPABASE_URL" == https://* ]] && echo yes || echo no)"
-          echo "SUPABASE_URL ends with .supabase.co: $([[ "$SUPABASE_URL" == *.supabase.co ]] && echo yes || echo no)"
-          echo "SUPABASE_URL has trailing slash: $([[ "$SUPABASE_URL" == */ ]] && echo yes || echo no)"
+          python - <<'PY'
+          import os
+          print("PY SUPABASE_URL present:", bool(os.getenv("SUPABASE_URL")))
+          print("PY SUPABASE_KEY present:", bool(os.getenv("SUPABASE_KEY")))
+          print("PY SUPABASE_URL length:", len(os.getenv("SUPABASE_URL") or ""))
+          print("PY SUPABASE_KEY length:", len(os.getenv("SUPABASE_KEY") or ""))
+          PY
 
       - name: Run setup check
         env:
@@ -44,28 +76,10 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -m portfolio_pulse.jobs.setup_check
-      - name: Wake the scheduler (fresh forks' crons start after a commit)
-        # Runs only if the checks above passed. One marker commit reliably
-        # registers this fork's scheduled workflows with GitHub's cron.
+
+      - name: Wake the scheduler
+        if: success()
         run: |
-         echo "::add-mask::$SUPABASE_URL"
-          echo "::add-mask::$SUPABASE_KEY"
-
-          echo "SUPABASE_URL present: $([[ -n "$SUPABASE_URL" ]] && echo yes || echo no)"
-          echo "SUPABASE_KEY present: $([[ -n "$SUPABASE_KEY" ]] && echo yes || echo no)"
-
-          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
-          echo "SUPABASE_KEY length: ${#SUPABASE_KEY}"
-
-          echo "SUPABASE_URL has https:// prefix: $([[ "$SUPABASE_URL" == https://* ]] && echo yes || echo no)"
-          echo "SUPABASE_URL ends with .supabase.co: $([[ "$SUPABASE_URL" == *.supabase.co ]] && echo yes || echo no)"
-          echo "SUPABASE_URL has trailing slash: $([[ "$SUPABASE_URL" == */ ]] && echo yes || echo no)"
-
-          echo -n "SUPABASE_URL sha256[0:12]: "
-          printf "%s" "$SUPABASE_URL" | sha256sum | cut -c1-12
-          echo -n "SUPABASE_KEY sha256[0:12]: "
-          printf "%s" "$SUPABASE_KEY" | sha256sum | cut -c1-12
-          
           if [ ! -f .setup-complete ]; then
             date -u +"setup verified %Y-%m-%dT%H:%M:%SZ" > .setup-complete
             git config user.name "portfolio-pulse-setup"
@@ -77,7 +91,9 @@ jobs:
           else
             echo "Setup marker already present — nothing to do."
           fi
-      - name: Start the pulse-loop (instant ~10-min polling, no waiting)
+
+      - name: Start the pulse-loop
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pulse_loop.yml --repo "$GITHUB_REPOSITORY" || true
