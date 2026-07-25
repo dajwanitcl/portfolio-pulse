@@ -13,8 +13,8 @@ name: pulse-loop
 on:
   workflow_dispatch:
   schedule:
-    #- cron: "7 2-18 * * *"   # hourly restart net during the IST window
-    - cron: "*/10 * * * *"
+    - cron: "7 2-18 * * *"   # hourly restart net during the IST window
+    #- cron: "*/10 * * * *"
     
 permissions:
   actions: write
