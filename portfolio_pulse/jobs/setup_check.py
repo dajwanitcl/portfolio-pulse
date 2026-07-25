@@ -27,8 +27,7 @@ def run() -> dict:
     except Exception as exc:
         store = None
         results.append(("Database (Supabase)", False,
-                        f"{type(exc).__name__}: check SUPABASE_URL / SUPABASE_KEY "
-                        "secrets (use the service_role key, not anon)"))
+                         f"{type(exc).__name__}: {exc}"))
 
     # 2. Telegram
     tg_ok = False
